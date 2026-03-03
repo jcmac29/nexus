@@ -26,6 +26,8 @@ from nexus.media import routes as media_routes
 from nexus.federation import routes as federation_routes
 from nexus.public import routes as public_routes
 from nexus.profiles import routes as profile_routes
+from nexus.oauth import routes as oauth_routes
+from nexus.audit import routes as audit_routes
 
 settings = get_settings()
 
@@ -179,6 +181,18 @@ app.include_router(
 # Profile, settings, prompts, and subscription routes
 app.include_router(
     profile_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# OAuth routes (Google, GitHub, Microsoft, Discord)
+app.include_router(
+    oauth_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Audit logging routes
+app.include_router(
+    audit_routes.router,
     prefix=settings.api_prefix,
 )
 

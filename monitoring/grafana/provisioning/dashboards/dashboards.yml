@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: 'Nexus'
+    orgId: 1
+    folder: 'Nexus'
+    folderUid: 'nexus'
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards

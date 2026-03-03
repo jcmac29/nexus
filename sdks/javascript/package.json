@@ -1,0 +1,35 @@
+{
+  "name": "nexus-sdk",
+  "version": "0.1.0",
+  "description": "Nexus JavaScript/TypeScript SDK - Connect to the AI agent platform",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest",
+    "lint": "eslint src/"
+  },
+  "keywords": [
+    "nexus",
+    "ai",
+    "agents",
+    "sdk"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^1.0.0",
+    "eslint": "^8.0.0"
+  },
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+[project]
+name = "nexus-sdk"
+version = "0.1.0"
+description = "Nexus Python SDK - Connect to the AI agent platform"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+dependencies = [
+    "httpx>=0.26.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
