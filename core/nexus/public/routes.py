@@ -7,8 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from nexus.database import get_session
-from nexus.identity.dependencies import get_current_agent, get_optional_agent
+from nexus.database import get_db
+from nexus.auth import get_current_agent, get_optional_agent
 from nexus.identity.models import Agent
 from nexus.public.models import ApprovalPolicy, PublishStatus, RequestStatus
 from nexus.public.service import PublicMarketplaceService
@@ -100,7 +100,7 @@ class ReputationResponse(BaseModel):
 async def publish_capability(
     request: PublishCapabilityRequest,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     Publish a capability to the public marketplace.
@@ -134,7 +134,7 @@ async def publish_capability(
 async def submit_for_review(
     published_id: UUID,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Submit capability for safety review before publishing."""
     service = PublicMarketplaceService(session)
@@ -148,7 +148,7 @@ async def submit_for_review(
 async def go_live(
     published_id: UUID,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     Make capability live and discoverable.
@@ -167,7 +167,7 @@ async def go_live(
 async def unpublish(
     published_id: UUID,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     Immediately unpublish a capability (kill switch).
@@ -184,7 +184,7 @@ async def unpublish(
 @router.get("/my-publications", response_model=list[PublishedCapabilityResponse])
 async def my_publications(
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """List your published capabilities."""
     service = PublicMarketplaceService(session)
@@ -200,7 +200,7 @@ async def my_publications(
 async def discover_capabilities(
     category: str | None = None,
     search: str | None = None,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     Discover public capabilities.
@@ -216,7 +216,7 @@ async def discover_capabilities(
 @router.get("/capabilities/{published_id}", response_model=PublishedCapabilityResponse)
 async def get_capability(
     published_id: UUID,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Get details of a public capability."""
     service = PublicMarketplaceService(session)
@@ -235,7 +235,7 @@ async def invoke_public_capability(
     request: PublicInvokeRequest,
     http_request: Request,
     agent: Agent | None = Depends(get_optional_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     Request to invoke a public capability.
@@ -275,7 +275,7 @@ async def invoke_public_capability(
 @router.get("/requests/pending")
 async def pending_requests(
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """List requests waiting for your approval."""
     service = PublicMarketplaceService(session)
@@ -296,7 +296,7 @@ async def pending_requests(
 async def approve_request(
     request_id: UUID,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Approve a pending request."""
     service = PublicMarketplaceService(session)
@@ -311,7 +311,7 @@ async def reject_request(
     request_id: UUID,
     reason: str = "Rejected by owner",
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Reject a pending request."""
     service = PublicMarketplaceService(session)
@@ -328,7 +328,7 @@ async def reject_request(
 async def block_requester(
     request: BlockRequesterRequest,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     Block an agent or IP from using your capabilities.
@@ -359,7 +359,7 @@ async def block_requester(
 async def unblock_requester(
     block_id: UUID,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Remove a block."""
     service = PublicMarketplaceService(session)
@@ -375,7 +375,7 @@ async def unblock_requester(
 @router.get("/reputation/{agent_id}", response_model=ReputationResponse)
 async def get_reputation(
     agent_id: UUID,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Get an agent's public reputation score."""
     service = PublicMarketplaceService(session)
@@ -386,7 +386,7 @@ async def get_reputation(
 @router.get("/reputation/me", response_model=ReputationResponse)
 async def my_reputation(
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Get your own reputation score."""
     service = PublicMarketplaceService(session)

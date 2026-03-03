@@ -6,8 +6,8 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from nexus.database import get_session
-from nexus.identity.dependencies import get_current_agent
+from nexus.database import get_db
+from nexus.auth import get_current_agent
 from nexus.identity.models import Agent
 from nexus.federation.models import PeerStatus, TrustLevel
 from nexus.federation.service import FederationService
@@ -72,7 +72,7 @@ class RemoteInvokeRequest(BaseModel):
 async def initiate_peering(
     request: InitiatePeeringRequest,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     Initiate a peering connection with another Nexus instance.
@@ -101,7 +101,7 @@ async def initiate_peering(
 async def accept_peering(
     request: AcceptPeeringRequest,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     Accept an incoming peering request.
@@ -124,7 +124,7 @@ async def accept_peering(
 async def list_peers(
     status: PeerStatus | None = None,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """List all federated peers."""
     service = FederationService(session)
@@ -135,7 +135,7 @@ async def list_peers(
 async def get_peer(
     peer_id: UUID,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Get details of a specific peer."""
     service = FederationService(session)
@@ -149,7 +149,7 @@ async def get_peer(
 async def suspend_peer(
     peer_id: UUID,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Temporarily suspend a peer connection."""
     service = FederationService(session)
@@ -165,7 +165,7 @@ async def suspend_peer(
 async def activate_peer(
     peer_id: UUID,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Activate a suspended peer connection."""
     service = FederationService(session)
@@ -181,7 +181,7 @@ async def activate_peer(
 async def revoke_peer(
     peer_id: UUID,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Permanently revoke a peer connection."""
     service = FederationService(session)
@@ -201,7 +201,7 @@ async def discover_remote_capabilities(
     peer_id: UUID,
     query: str | None = None,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Discover capabilities available on a remote peer."""
     service = FederationService(session)
@@ -218,7 +218,7 @@ async def invoke_remote_capability(
     peer_id: UUID,
     request: RemoteInvokeRequest,
     agent: Agent = Depends(get_current_agent),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Invoke a capability on a remote peer's agent."""
     service = FederationService(session)
@@ -243,7 +243,7 @@ async def invoke_remote_capability(
 async def federated_capabilities(
     x_nexus_peer_id: str = Header(...),
     x_nexus_signature: str = Header(...),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     [Called by peers] Return published capabilities.
@@ -266,7 +266,7 @@ async def federated_invoke(
     request: dict,
     x_nexus_peer_id: str = Header(...),
     x_nexus_signature: str = Header(...),
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """
     [Called by peers] Invoke a capability.
