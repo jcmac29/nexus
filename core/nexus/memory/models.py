@@ -34,6 +34,13 @@ class Memory(Base):
         primary_key=True,
         server_default=func.gen_random_uuid(),
     )
+    # Multi-tenancy: denormalized for efficient RLS queries
+    account_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("accounts.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
     agent_id: Mapped[UUID] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("agents.id", ondelete="CASCADE"),

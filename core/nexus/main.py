@@ -61,6 +61,8 @@ from nexus.search import routes as search_routes
 from nexus.gigs import routes as gigs_routes
 from nexus.credits import routes as credits_routes
 from nexus.onboarding import routes as onboarding_routes
+from nexus.graph import routes as graph_routes
+from nexus.tenants import routes as tenants_routes
 
 settings = get_settings()
 
@@ -392,6 +394,18 @@ app.include_router(
 # AI Self-Onboarding (discovery, registration, referrals)
 app.include_router(
     onboarding_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Graph memory (relationships between memories/agents/capabilities)
+app.include_router(
+    graph_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Multi-tenant management
+app.include_router(
+    tenants_routes.router,
     prefix=settings.api_prefix,
 )
 

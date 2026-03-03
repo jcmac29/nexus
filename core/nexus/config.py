@@ -62,6 +62,17 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
 
+    # Multi-Tenancy (Hosted Cloud)
+    multi_tenant_enabled: bool = False
+    base_domain: str = "nexus-cloud.com"  # Base domain for subdomain routing
+    default_subdomain: str = "api"  # Subdomain for non-tenant requests
+
+    # Feature Flags (global defaults, can be overridden per tenant)
+    feature_graph_memory: bool = True
+    feature_webhooks: bool = True
+    feature_federation: bool = True
+    feature_marketplace: bool = True
+
 
 @lru_cache
 def get_settings() -> Settings:
