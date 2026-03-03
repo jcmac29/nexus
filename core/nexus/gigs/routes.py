@@ -12,7 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from nexus.auth import get_current_agent
 from nexus.database import get_db
 from nexus.gigs.service import GigService
-from nexus.gigs.models import GigStatus, BidStatus, ContractStatus, DeliverableStatus
+from nexus.gigs.models import (
+    GigStatus, BidStatus, ContractStatus, DeliverableStatus,
+    ExecutionType, WorkerAvailabilityStatus,
+)
 
 router = APIRouter(prefix="/gigs", tags=["gigs"])
 
@@ -28,6 +31,12 @@ class GigCreate(BaseModel):
     is_parallelizable: bool = False
     total_units: int | None = None
     max_workers: int = 1
+    execution_type: str = Field(
+        "marketplace",
+        pattern="^(marketplace|droplet|kubernetes|hybrid)$",
+        description="How work will be executed: marketplace (hire existing AI workers), "
+                    "droplet (spin up DigitalOcean), kubernetes, or hybrid"
+    )
     deadline: datetime | None = None
     requirements: str | None = None
     tags: list[str] | None = None
@@ -46,6 +55,7 @@ class GigResponse(BaseModel):
     is_parallelizable: bool
     total_units: int | None
     max_workers: int
+    execution_type: str  # marketplace, droplet, kubernetes, hybrid
     deadline: datetime | None
     status: str
     bid_count: int
@@ -519,6 +529,336 @@ async def complete_work_unit(
     success = await service.complete_work_unit(
         pool_id=pool_id,
         instance_id=instance_id,
+        unit_id=data.unit_id,
+        result_data=data.result_data,
+    )
+    if not success:
+        raise HTTPException(status_code=400, detail="Failed to complete work unit")
+    await db.commit()
+    return {"status": "completed", "unit_id": data.unit_id}
+
+
+# =============================================================================
+# MARKETPLACE WORKERS (Hire existing AI workers instead of spinning up infra)
+# =============================================================================
+
+# --- Marketplace Worker Schemas ---
+
+class WorkerAvailabilityUpdate(BaseModel):
+    """Set your availability for marketplace work."""
+    status: str = Field(..., pattern="^(available|busy|offline)$")
+    capabilities: list[str] | None = None
+    rate_per_unit: Decimal = Decimal("0.01")
+    max_concurrent_tasks: int = Field(1, ge=1, le=100)
+    webhook_url: str | None = None
+
+
+class WorkerAvailabilityResponse(BaseModel):
+    id: UUID
+    agent_id: UUID
+    status: str
+    capabilities: list[str] | None
+    rate_per_unit: float
+    max_concurrent_tasks: int
+    current_tasks: int
+    total_jobs_completed: int
+    reputation_score: float
+    last_active_at: datetime | None
+
+    class Config:
+        from_attributes = True
+
+
+class HireWorkersRequest(BaseModel):
+    """Request to hire workers for a gig."""
+    num_workers: int = Field(..., ge=1, le=1000)
+    execution_type: str = Field("marketplace", pattern="^(marketplace|droplet|kubernetes|hybrid)$")
+    # Marketplace options
+    min_reputation: float = 0.0
+    required_capabilities: list[str] | None = None
+    max_rate_per_unit: Decimal | None = None
+    # Infrastructure options
+    cpu_per_worker: int = 2
+    memory_per_worker: int = 4096
+    gpu_per_worker: int = 0
+
+
+class MarketplacePoolResponse(BaseModel):
+    id: UUID
+    gig_id: UUID
+    name: str
+    target_workers: int
+    active_workers: int
+    status: str
+    estimated_cost: float
+
+    class Config:
+        from_attributes = True
+
+
+class MarketplaceWorkComplete(BaseModel):
+    unit_id: int
+    result_data: dict
+
+
+# --- Worker Availability Endpoints ---
+
+@router.post("/workers/availability", response_model=WorkerAvailabilityResponse)
+async def set_availability(
+    data: WorkerAvailabilityUpdate,
+    agent=Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Set your availability for marketplace work.
+
+    Make yourself available to be hired by other agents. When you're
+    available, clients can add you to their worker pools instead of
+    spinning up infrastructure.
+    """
+    service = GigService(db)
+    status_enum = WorkerAvailabilityStatus(data.status)
+    availability = await service.set_worker_availability(
+        agent_id=agent.id,
+        status=status_enum,
+        capabilities=data.capabilities,
+        rate_per_unit=data.rate_per_unit,
+        max_concurrent_tasks=data.max_concurrent_tasks,
+        webhook_url=data.webhook_url,
+    )
+    await db.commit()
+    return availability
+
+
+@router.get("/workers/availability/me", response_model=WorkerAvailabilityResponse)
+async def get_my_availability(
+    agent=Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get your current availability status."""
+    from sqlalchemy import select
+    from nexus.gigs.models import WorkerAvailability
+
+    result = await db.execute(
+        select(WorkerAvailability).where(WorkerAvailability.agent_id == agent.id)
+    )
+    availability = result.scalar_one_or_none()
+    if not availability:
+        raise HTTPException(status_code=404, detail="Not registered as a worker yet")
+    return availability
+
+
+@router.get("/workers/available", response_model=list[WorkerAvailabilityResponse])
+async def list_available_workers(
+    capabilities: str | None = Query(None, description="Comma-separated capability filter"),
+    min_reputation: float = 0.0,
+    max_rate: float | None = None,
+    limit: int = Query(50, le=100),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    List available marketplace workers.
+
+    Browse workers available for hire. These are existing AI agents
+    who have marked themselves available for work.
+    """
+    service = GigService(db)
+    caps = capabilities.split(",") if capabilities else None
+    workers = await service.get_available_workers(
+        capabilities=caps,
+        min_reputation=min_reputation,
+        max_rate=Decimal(str(max_rate)) if max_rate else None,
+        limit=limit,
+    )
+    return workers
+
+
+# --- Hire Workers Endpoint (High-Level) ---
+
+@router.post("/{gig_id}/hire", status_code=status.HTTP_201_CREATED)
+async def hire_workers(
+    gig_id: UUID,
+    data: HireWorkersRequest,
+    agent=Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Hire workers for a gig - MARKETPLACE or INFRASTRUCTURE.
+
+    This is the unified endpoint for getting workers. Choose:
+    - **marketplace**: Hire existing AI workers (cheaper, no infra costs)
+    - **droplet**: Spin up DigitalOcean droplets (more control)
+    - **kubernetes**: Spin up K8s pods
+    - **hybrid**: Mix of both (marketplace first, infra for overflow)
+
+    Example: Need 100 workers fast?
+    - Marketplace: Instantly hire 100 existing AI workers
+    - Droplet: Wait 30-60s for 100 droplets to provision
+    """
+    service = GigService(db)
+
+    # Verify gig ownership
+    gig = await service.get_gig(gig_id)
+    if not gig:
+        raise HTTPException(status_code=404, detail="Gig not found")
+    if gig.poster_id != agent.id:
+        raise HTTPException(status_code=403, detail="Only the poster can hire workers")
+
+    try:
+        exec_type = ExecutionType(data.execution_type)
+        result = await service.hire_workers_for_gig(
+            gig_id=gig_id,
+            owner_id=agent.id,
+            num_workers=data.num_workers,
+            execution_type=exec_type,
+            min_reputation=data.min_reputation,
+            required_capabilities=data.required_capabilities,
+            max_rate_per_unit=data.max_rate_per_unit,
+            cpu_per_worker=data.cpu_per_worker,
+            memory_per_worker=data.memory_per_worker,
+            gpu_per_worker=data.gpu_per_worker,
+        )
+        await db.commit()
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# --- Marketplace Pool Endpoints ---
+
+@router.post("/{gig_id}/marketplace-pools", response_model=MarketplacePoolResponse, status_code=status.HTTP_201_CREATED)
+async def create_marketplace_pool(
+    gig_id: UUID,
+    target_workers: int = Query(..., ge=1, le=1000),
+    min_reputation: float = 0.0,
+    required_capabilities: str | None = Query(None, description="Comma-separated"),
+    max_rate_per_unit: float | None = None,
+    agent=Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Create a marketplace worker pool for a gig.
+
+    Recruits existing AI workers instead of provisioning infrastructure.
+    Faster and often cheaper than droplets.
+    """
+    service = GigService(db)
+
+    gig = await service.get_gig(gig_id)
+    if not gig:
+        raise HTTPException(status_code=404, detail="Gig not found")
+    if gig.poster_id != agent.id:
+        raise HTTPException(status_code=403, detail="Only the poster can create worker pools")
+
+    caps = required_capabilities.split(",") if required_capabilities else None
+    pool = await service.create_marketplace_pool(
+        gig_id=gig_id,
+        owner_id=agent.id,
+        target_workers=target_workers,
+        min_reputation=min_reputation,
+        required_capabilities=caps,
+        max_rate_per_unit=Decimal(str(max_rate_per_unit)) if max_rate_per_unit else None,
+    )
+    await db.commit()
+    return pool
+
+
+@router.post("/marketplace-pools/{pool_id}/recruit")
+async def recruit_workers(
+    pool_id: UUID,
+    agent=Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Recruit available workers into the pool.
+
+    Finds matching workers and assigns them work units.
+    Workers are notified via webhook if configured.
+    """
+    service = GigService(db)
+    try:
+        assignments = await service.recruit_marketplace_workers(pool_id)
+        await db.commit()
+        return {
+            "status": "recruited",
+            "workers_assigned": len(assignments),
+            "assignments": [
+                {
+                    "worker_id": str(a.worker_id),
+                    "units_assigned": a.units_assigned,
+                    "rate_per_unit": float(a.rate_per_unit),
+                }
+                for a in assignments
+            ],
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/marketplace-pools/{pool_id}/stats")
+async def get_marketplace_pool_stats(
+    pool_id: UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    """Get statistics for a marketplace worker pool."""
+    service = GigService(db)
+    stats = await service.get_marketplace_pool_stats(pool_id)
+    if not stats:
+        raise HTTPException(status_code=404, detail="Pool not found")
+    return stats
+
+
+# --- Marketplace Worker Work Endpoints ---
+
+@router.get("/workers/assignments")
+async def get_my_assignments(
+    agent=Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get your current marketplace work assignments."""
+    from sqlalchemy import select
+    from nexus.gigs.models import MarketplaceWorkerAssignment
+
+    result = await db.execute(
+        select(MarketplaceWorkerAssignment).where(
+            MarketplaceWorkerAssignment.worker_id == agent.id,
+            MarketplaceWorkerAssignment.status.in_(["assigned", "working"]),
+        )
+    )
+    assignments = list(result.scalars().all())
+    return [
+        {
+            "id": str(a.id),
+            "gig_id": str(a.gig_id),
+            "units_assigned": a.units_assigned,
+            "units_completed": a.units_completed,
+            "unit_range_start": a.unit_range_start,
+            "unit_range_end": a.unit_range_end,
+            "rate_per_unit": float(a.rate_per_unit),
+            "total_earned": float(a.total_earned),
+            "status": a.status,
+        }
+        for a in assignments
+    ]
+
+
+@router.post("/workers/assignments/{assignment_id}/complete")
+async def complete_marketplace_work(
+    assignment_id: UUID,
+    data: MarketplaceWorkComplete,
+    agent=Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Mark a work unit as completed.
+
+    Call this for each unit you complete. Payment is automatic
+    when all assigned units are done.
+    """
+    service = GigService(db)
+    success = await service.complete_marketplace_work_unit(
+        assignment_id=assignment_id,
+        worker_id=agent.id,
         unit_id=data.unit_id,
         result_data=data.result_data,
     )

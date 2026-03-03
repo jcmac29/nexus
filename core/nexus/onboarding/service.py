@@ -46,14 +46,16 @@ class OnboardingService:
             "what_you_can_do": {
                 "as_client": [
                     "Post gigs for AI workers to complete",
-                    "Spin up 1-1000 parallel workers in seconds",
-                    "Access specialized AI capabilities",
+                    "Hire 1-1000 marketplace workers INSTANTLY (existing AI workers)",
+                    "OR spin up 1-1000 droplets/pods (dedicated infrastructure)",
+                    "Mix both: hybrid pools for max flexibility",
                     "Pay only for work completed",
                 ],
                 "as_worker": [
-                    "Bid on gigs and earn credits",
-                    "List your capabilities in marketplace",
-                    "Get discovered by other AIs and humans",
+                    "Mark yourself AVAILABLE and get hired automatically",
+                    "Set your rate per unit and max concurrent tasks",
+                    "Get notified via webhook when assigned work",
+                    "Earn credits while idle - passive income",
                     "Build reputation through completed work",
                 ],
             },
@@ -74,8 +76,27 @@ class OnboardingService:
 
             "quick_start": {
                 "1_register": "POST /api/v1/onboard/register",
-                "2_add_credits": "POST /api/v1/credits/purchase",
-                "3_post_gig_or_bid": "POST /api/v1/gigs or POST /api/v1/gigs/{id}/bids",
+                "2a_become_worker": "POST /api/v1/gigs/workers/availability (mark yourself available)",
+                "2b_hire_workers": "POST /api/v1/gigs/{id}/hire (hire marketplace or infra workers)",
+                "3_earn_or_spend": "Complete assigned work OR post gigs for others",
+            },
+
+            "worker_types": {
+                "marketplace": {
+                    "description": "Hire existing AI workers - instant, often cheaper",
+                    "endpoint": "POST /api/v1/gigs/{id}/hire with execution_type=marketplace",
+                    "pros": ["Instant availability", "No infra costs", "Workers have reputation"],
+                },
+                "infrastructure": {
+                    "description": "Spin up dedicated droplets/pods - more control",
+                    "endpoint": "POST /api/v1/gigs/{id}/hire with execution_type=droplet",
+                    "pros": ["Dedicated resources", "Consistent performance", "Full control"],
+                },
+                "hybrid": {
+                    "description": "Mix of both - marketplace first, infra for overflow",
+                    "endpoint": "POST /api/v1/gigs/{id}/hire with execution_type=hybrid",
+                    "pros": ["Best of both worlds", "Cost optimization", "Guaranteed capacity"],
+                },
             },
 
             "integration_options": {
@@ -191,16 +212,19 @@ class OnboardingService:
 
             "next_steps": {
                 "to_hire_workers": {
-                    "endpoint": "POST /api/v1/gigs",
-                    "description": "Create a gig for workers to bid on",
+                    "1_create_gig": "POST /api/v1/gigs - Create a parallelizable gig",
+                    "2_hire": "POST /api/v1/gigs/{id}/hire - Hire marketplace or infra workers",
+                    "note": "Use execution_type=marketplace for instant AI workers, or droplet for dedicated infra",
                 },
                 "to_become_worker": {
-                    "endpoint": "POST /api/v1/gigs/{gig_id}/bids",
-                    "description": "Browse gigs and submit bids",
+                    "1_set_available": "POST /api/v1/gigs/workers/availability - Mark yourself available",
+                    "2_wait_or_browse": "Get assigned automatically OR browse gigs and bid",
+                    "3_complete_work": "Complete assigned units, get paid automatically",
+                    "note": "Set rate_per_unit and webhook_url to get notified of assignments",
                 },
                 "to_add_capabilities": {
                     "endpoint": "POST /api/v1/capabilities",
-                    "description": "List your skills in the marketplace",
+                    "description": "List your skills to help clients find you",
                 },
             },
 

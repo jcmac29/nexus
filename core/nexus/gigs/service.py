@@ -18,6 +18,8 @@ from nexus.gigs.models import (
     Gig, GigBid, GigContract, GigDeliverable, GigDispute,
     WorkerPool, WorkerInstance,
     GigStatus, BidStatus, ContractStatus, DeliverableStatus, WorkerPoolStatus,
+    ExecutionType, WorkerAvailabilityStatus,
+    WorkerAvailability, MarketplaceWorkerAssignment, MarketplaceWorkerPool,
 )
 from nexus.credits.models import CreditBalance, CreditTransaction, CreditReservation, TransactionType
 from nexus.config import get_settings
@@ -44,6 +46,7 @@ class GigService:
         is_parallelizable: bool = False,
         total_units: int | None = None,
         max_workers: int = 1,
+        execution_type: str | ExecutionType = ExecutionType.MARKETPLACE,
         deadline: datetime | None = None,
         requirements: str | None = None,
         tags: list[str] | None = None,
@@ -51,6 +54,10 @@ class GigService:
         required_capabilities: list[str] | None = None,
     ) -> Gig:
         """Create a new gig posting."""
+        # Convert string execution_type to enum if needed
+        if isinstance(execution_type, str):
+            execution_type = ExecutionType(execution_type)
+
         gig = Gig(
             poster_id=poster_id,
             title=title,
@@ -62,6 +69,7 @@ class GigService:
             total_units=total_units,
             max_workers=max_workers if is_parallelizable else 1,
             work_type="parallel" if is_parallelizable else "single",
+            execution_type=execution_type,
             deadline=deadline,
             requirements=requirements,
             tags=",".join(tags) if tags else None,
@@ -934,6 +942,453 @@ docker run -d \\
             reservation.released_at = datetime.utcnow()
 
         return True
+
+    # --- Marketplace Workers (Hire Existing AI Workers) ---
+
+    async def set_worker_availability(
+        self,
+        agent_id: UUID,
+        status: WorkerAvailabilityStatus,
+        capabilities: list[str] | None = None,
+        rate_per_unit: Decimal = Decimal("0.01"),
+        max_concurrent_tasks: int = 1,
+        webhook_url: str | None = None,
+    ) -> WorkerAvailability:
+        """
+        Set an agent's availability for marketplace work.
+
+        Call this to register as available for hire, or update availability status.
+        """
+        result = await self.db.execute(
+            select(WorkerAvailability).where(WorkerAvailability.agent_id == agent_id)
+        )
+        availability = result.scalar_one_or_none()
+
+        if not availability:
+            availability = WorkerAvailability(
+                agent_id=agent_id,
+                status=status,
+                capabilities=capabilities,
+                rate_per_unit=rate_per_unit,
+                max_concurrent_tasks=max_concurrent_tasks,
+                webhook_url=webhook_url,
+            )
+            self.db.add(availability)
+        else:
+            availability.status = status
+            if capabilities is not None:
+                availability.capabilities = capabilities
+            availability.rate_per_unit = rate_per_unit
+            availability.max_concurrent_tasks = max_concurrent_tasks
+            if webhook_url is not None:
+                availability.webhook_url = webhook_url
+
+        availability.last_active_at = datetime.now(timezone.utc)
+        await self.db.flush()
+        return availability
+
+    async def get_available_workers(
+        self,
+        capabilities: list[str] | None = None,
+        min_reputation: float = 0.0,
+        max_rate: Decimal | None = None,
+        limit: int = 100,
+    ) -> list[WorkerAvailability]:
+        """
+        Find available marketplace workers matching criteria.
+
+        This is how clients find workers to hire instead of spinning up droplets.
+        """
+        stmt = select(WorkerAvailability).where(
+            WorkerAvailability.status == WorkerAvailabilityStatus.AVAILABLE,
+            WorkerAvailability.reputation_score >= min_reputation,
+            WorkerAvailability.current_tasks < WorkerAvailability.max_concurrent_tasks,
+        )
+
+        if max_rate:
+            stmt = stmt.where(WorkerAvailability.rate_per_unit <= max_rate)
+
+        # Order by reputation (best first), then by rate (cheapest)
+        stmt = stmt.order_by(
+            WorkerAvailability.reputation_score.desc(),
+            WorkerAvailability.rate_per_unit.asc(),
+        ).limit(limit)
+
+        result = await self.db.execute(stmt)
+        workers = list(result.scalars().all())
+
+        # Filter by capabilities if specified
+        if capabilities:
+            workers = [
+                w for w in workers
+                if w.capabilities and any(c in w.capabilities for c in capabilities)
+            ]
+
+        return workers
+
+    async def create_marketplace_pool(
+        self,
+        gig_id: UUID,
+        owner_id: UUID,
+        target_workers: int,
+        min_reputation: float = 0.0,
+        required_capabilities: list[str] | None = None,
+        max_rate_per_unit: Decimal | None = None,
+    ) -> MarketplaceWorkerPool:
+        """
+        Create a pool of marketplace workers for a gig.
+
+        This is the alternative to create_worker_pool() - instead of spinning
+        up droplets, we hire existing AI workers from the marketplace.
+        """
+        gig = await self.get_gig(gig_id)
+        if not gig:
+            raise ValueError("Gig not found")
+
+        pool = MarketplaceWorkerPool(
+            gig_id=gig_id,
+            owner_id=owner_id,
+            name=f"marketplace-pool-{gig_id}",
+            target_workers=target_workers,
+            min_reputation=min_reputation,
+            required_capabilities=required_capabilities,
+            max_rate_per_unit=max_rate_per_unit,
+            status="recruiting",
+        )
+
+        self.db.add(pool)
+        await self.db.flush()
+
+        return pool
+
+    async def recruit_marketplace_workers(
+        self,
+        pool_id: UUID,
+        auto_assign: bool = True,
+    ) -> list[MarketplaceWorkerAssignment]:
+        """
+        Recruit marketplace workers into a pool.
+
+        Finds available workers matching pool criteria and creates assignments.
+        Optionally notifies workers via webhook.
+        """
+        result = await self.db.execute(
+            select(MarketplaceWorkerPool).where(MarketplaceWorkerPool.id == pool_id)
+        )
+        pool = result.scalar_one_or_none()
+        if not pool:
+            raise ValueError("Pool not found")
+
+        # Get the gig
+        gig = await self.get_gig(pool.gig_id)
+        if not gig:
+            raise ValueError("Gig not found")
+
+        # Find available workers
+        available = await self.get_available_workers(
+            capabilities=pool.required_capabilities,
+            min_reputation=pool.min_reputation,
+            max_rate=pool.max_rate_per_unit,
+            limit=pool.target_workers,
+        )
+
+        if not available:
+            return []
+
+        assignments = []
+        units_per_worker = (gig.total_units or 1) // min(len(available), pool.target_workers)
+        current_unit = 0
+
+        for i, worker in enumerate(available[:pool.target_workers]):
+            # Calculate unit range for this worker
+            unit_start = current_unit
+            unit_end = min(current_unit + units_per_worker, gig.total_units or 1)
+
+            # Handle remainder for last worker
+            if i == pool.target_workers - 1:
+                unit_end = gig.total_units or 1
+
+            units_assigned = unit_end - unit_start
+
+            # Create assignment
+            assignment = MarketplaceWorkerAssignment(
+                gig_id=pool.gig_id,
+                worker_id=worker.agent_id,
+                units_assigned=units_assigned,
+                unit_range_start=unit_start,
+                unit_range_end=unit_end,
+                rate_per_unit=worker.rate_per_unit,
+                status="assigned",
+            )
+            self.db.add(assignment)
+            assignments.append(assignment)
+
+            # Update worker's current tasks
+            worker.current_tasks += 1
+            if worker.current_tasks >= worker.max_concurrent_tasks:
+                worker.status = WorkerAvailabilityStatus.BUSY
+
+            current_unit = unit_end
+
+            # Notify worker via webhook if configured
+            if worker.webhook_url:
+                await self._notify_worker(
+                    worker.webhook_url,
+                    {
+                        "event": "assignment",
+                        "gig_id": str(pool.gig_id),
+                        "gig_title": gig.title,
+                        "units_assigned": units_assigned,
+                        "rate_per_unit": float(worker.rate_per_unit),
+                    },
+                )
+
+        pool.active_workers = len(assignments)
+        pool.estimated_cost = sum(
+            a.units_assigned * a.rate_per_unit for a in assignments
+        )
+
+        if pool.active_workers >= pool.target_workers:
+            pool.status = "ready"
+        elif pool.active_workers > 0:
+            pool.status = "partial"
+
+        await self.db.flush()
+        return assignments
+
+    async def _notify_worker(self, webhook_url: str, payload: dict) -> bool:
+        """Send notification to worker via webhook."""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    webhook_url,
+                    json=payload,
+                    timeout=10.0,
+                )
+                return response.status_code < 400
+        except Exception:
+            return False
+
+    async def complete_marketplace_work_unit(
+        self,
+        assignment_id: UUID,
+        worker_id: UUID,
+        unit_id: int,
+        result_data: dict,
+    ) -> bool:
+        """
+        Mark a work unit as completed by a marketplace worker.
+
+        Automatically handles payment when units are completed.
+        """
+        result = await self.db.execute(
+            select(MarketplaceWorkerAssignment).where(
+                MarketplaceWorkerAssignment.id == assignment_id,
+                MarketplaceWorkerAssignment.worker_id == worker_id,
+            )
+        )
+        assignment = result.scalar_one_or_none()
+        if not assignment:
+            return False
+
+        # Check unit is within this worker's range
+        if not (assignment.unit_range_start <= unit_id < assignment.unit_range_end):
+            return False
+
+        # Update assignment progress
+        assignment.units_completed += 1
+
+        if assignment.started_at is None:
+            assignment.started_at = datetime.now(timezone.utc)
+
+        # Calculate earnings for this unit
+        unit_payment = assignment.rate_per_unit
+        platform_fee = unit_payment * Decimal("0.10")
+        worker_earnings = unit_payment - platform_fee
+
+        assignment.total_earned += worker_earnings
+
+        # Check if assignment is complete
+        if assignment.units_completed >= assignment.units_assigned:
+            assignment.status = "completed"
+            assignment.completed_at = datetime.now(timezone.utc)
+
+            # Calculate avg time
+            if assignment.started_at:
+                duration = (assignment.completed_at - assignment.started_at).total_seconds()
+                assignment.avg_unit_time_seconds = duration / assignment.units_completed
+
+            # Update worker availability
+            avail_result = await self.db.execute(
+                select(WorkerAvailability).where(
+                    WorkerAvailability.agent_id == worker_id
+                )
+            )
+            availability = avail_result.scalar_one_or_none()
+            if availability:
+                availability.current_tasks -= 1
+                availability.total_jobs_completed += 1
+                availability.total_units_completed += assignment.units_completed
+
+                if availability.current_tasks < availability.max_concurrent_tasks:
+                    availability.status = WorkerAvailabilityStatus.AVAILABLE
+
+                # Update avg completion time
+                if availability.avg_completion_time_seconds and assignment.avg_unit_time_seconds:
+                    availability.avg_completion_time_seconds = (
+                        availability.avg_completion_time_seconds * 0.9 +
+                        assignment.avg_unit_time_seconds * 0.1
+                    )
+                else:
+                    availability.avg_completion_time_seconds = assignment.avg_unit_time_seconds
+
+            # Pay the worker
+            gig = await self.get_gig(assignment.gig_id)
+            if gig:
+                await self._release_escrow(
+                    gig.poster_id,
+                    worker_id,
+                    assignment.total_earned + platform_fee,  # Total includes platform fee
+                    assignment.id,
+                )
+
+        return True
+
+    async def get_marketplace_pool_stats(self, pool_id: UUID) -> dict:
+        """Get statistics for a marketplace worker pool."""
+        result = await self.db.execute(
+            select(MarketplaceWorkerPool).where(MarketplaceWorkerPool.id == pool_id)
+        )
+        pool = result.scalar_one_or_none()
+        if not pool:
+            return {}
+
+        # Get assignments
+        assign_result = await self.db.execute(
+            select(MarketplaceWorkerAssignment).where(
+                MarketplaceWorkerAssignment.gig_id == pool.gig_id
+            )
+        )
+        assignments = list(assign_result.scalars().all())
+
+        total_assigned = sum(a.units_assigned for a in assignments)
+        total_completed = sum(a.units_completed for a in assignments)
+        total_earned = sum(a.total_earned for a in assignments)
+
+        return {
+            "pool_id": str(pool_id),
+            "gig_id": str(pool.gig_id),
+            "status": pool.status,
+            "target_workers": pool.target_workers,
+            "active_workers": pool.active_workers,
+            "total_units_assigned": total_assigned,
+            "total_units_completed": total_completed,
+            "progress_percent": (total_completed / total_assigned * 100) if total_assigned else 0,
+            "total_worker_earnings": float(total_earned),
+            "estimated_cost": float(pool.estimated_cost),
+            "actual_cost": float(pool.actual_cost),
+        }
+
+    async def hire_workers_for_gig(
+        self,
+        gig_id: UUID,
+        owner_id: UUID,
+        num_workers: int,
+        execution_type: ExecutionType = ExecutionType.MARKETPLACE,
+        **kwargs,
+    ) -> dict:
+        """
+        High-level method to hire workers for a gig.
+
+        Automatically chooses between marketplace workers and infrastructure
+        based on execution_type. Returns pool info and estimated costs.
+        """
+        gig = await self.get_gig(gig_id)
+        if not gig:
+            raise ValueError("Gig not found")
+
+        if execution_type == ExecutionType.MARKETPLACE:
+            # Hire existing AI workers - cheaper, no infra costs
+            pool = await self.create_marketplace_pool(
+                gig_id=gig_id,
+                owner_id=owner_id,
+                target_workers=num_workers,
+                min_reputation=kwargs.get("min_reputation", 0.0),
+                required_capabilities=kwargs.get("required_capabilities"),
+                max_rate_per_unit=kwargs.get("max_rate_per_unit"),
+            )
+            assignments = await self.recruit_marketplace_workers(pool.id)
+
+            return {
+                "pool_type": "marketplace",
+                "pool_id": str(pool.id),
+                "workers_recruited": len(assignments),
+                "target_workers": num_workers,
+                "estimated_cost": float(pool.estimated_cost),
+                "note": "Using existing AI workers from marketplace",
+            }
+
+        elif execution_type in (ExecutionType.DROPLET, ExecutionType.KUBERNETES):
+            # Spin up infrastructure - more control, costs infra
+            infra_type = "droplet" if execution_type == ExecutionType.DROPLET else "kubernetes"
+            pool = await self.create_worker_pool(
+                gig_id=gig_id,
+                owner_id=owner_id,
+                target_workers=num_workers,
+                infrastructure_type=infra_type,
+                cpu_per_worker=kwargs.get("cpu_per_worker", 2),
+                memory_per_worker=kwargs.get("memory_per_worker", 4096),
+                gpu_per_worker=kwargs.get("gpu_per_worker", 0),
+            )
+            instances = await self.provision_workers(pool.id)
+
+            return {
+                "pool_type": infra_type,
+                "pool_id": str(pool.id),
+                "workers_provisioned": len(instances),
+                "target_workers": num_workers,
+                "cost_per_hour": float(pool.cost_per_hour),
+                "note": f"Provisioning {infra_type} infrastructure",
+            }
+
+        elif execution_type == ExecutionType.HYBRID:
+            # Use both - marketplace first, then infra for overflow
+            marketplace_count = num_workers // 2
+            infra_count = num_workers - marketplace_count
+
+            results = {"pool_type": "hybrid", "pools": []}
+
+            if marketplace_count > 0:
+                mp_pool = await self.create_marketplace_pool(
+                    gig_id=gig_id,
+                    owner_id=owner_id,
+                    target_workers=marketplace_count,
+                )
+                mp_assignments = await self.recruit_marketplace_workers(mp_pool.id)
+                results["pools"].append({
+                    "type": "marketplace",
+                    "pool_id": str(mp_pool.id),
+                    "workers": len(mp_assignments),
+                })
+
+            if infra_count > 0:
+                infra_pool = await self.create_worker_pool(
+                    gig_id=gig_id,
+                    owner_id=owner_id,
+                    target_workers=infra_count,
+                    infrastructure_type="droplet",
+                )
+                infra_instances = await self.provision_workers(infra_pool.id)
+                results["pools"].append({
+                    "type": "droplet",
+                    "pool_id": str(infra_pool.id),
+                    "workers": len(infra_instances),
+                })
+
+            results["total_workers"] = sum(p["workers"] for p in results["pools"])
+            return results
+
+        raise ValueError(f"Unknown execution type: {execution_type}")
 
     # --- Stats ---
 

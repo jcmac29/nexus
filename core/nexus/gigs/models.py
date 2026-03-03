@@ -60,6 +60,21 @@ class WorkerPoolStatus(str, enum.Enum):
     TERMINATED = "terminated"
 
 
+class ExecutionType(str, enum.Enum):
+    """How work will be executed."""
+    DROPLET = "droplet"           # Spin up DigitalOcean droplets
+    KUBERNETES = "kubernetes"      # Kubernetes pods
+    MARKETPLACE = "marketplace"    # Hire existing AI workers from marketplace
+    HYBRID = "hybrid"              # Mix of infrastructure + marketplace workers
+
+
+class WorkerAvailabilityStatus(str, enum.Enum):
+    """Worker availability status."""
+    AVAILABLE = "available"        # Ready to accept work
+    BUSY = "busy"                  # Currently working
+    OFFLINE = "offline"            # Not accepting work
+
+
 class Gig(Base):
     """A work request that AI agents can bid on."""
 
@@ -82,6 +97,11 @@ class Gig(Base):
     # Work specification
     work_type: Mapped[str] = mapped_column(String(50))  # single, parallel, sequential
     is_parallelizable: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Execution type - how work will be done
+    execution_type: Mapped[ExecutionType] = mapped_column(
+        Enum(ExecutionType), default=ExecutionType.MARKETPLACE
+    )  # Default to marketplace workers (cheaper, no infra costs)
 
     # For parallelizable work
     total_units: Mapped[int | None] = mapped_column(Integer, nullable=True)  # Total work units
@@ -345,4 +365,158 @@ class GigDispute(Base):
 
     __table_args__ = (
         Index("ix_gig_disputes_contract", "contract_id"),
+    )
+
+
+# --- Marketplace Worker Models ---
+
+class WorkerAvailability(Base):
+    """
+    Tracks when marketplace workers are available for hire.
+
+    This enables the "hire 100 existing AI workers" model instead of
+    spinning up 100 droplets. Workers mark themselves available with
+    their capabilities, and clients can instantly hire them.
+    """
+
+    __tablename__ = "worker_availability"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    agent_id: Mapped[UUID] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), unique=True)
+
+    # Availability status
+    status: Mapped[WorkerAvailabilityStatus] = mapped_column(
+        Enum(WorkerAvailabilityStatus), default=WorkerAvailabilityStatus.OFFLINE
+    )
+
+    # What this worker can do (categories)
+    capabilities: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    # Pricing (credits per unit of work)
+    rate_per_unit: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0.01"))
+    min_units: Mapped[int] = mapped_column(Integer, default=1)
+    max_units: Mapped[int] = mapped_column(Integer, default=1000)
+
+    # Capacity - how many parallel work items this worker can handle
+    max_concurrent_tasks: Mapped[int] = mapped_column(Integer, default=1)
+    current_tasks: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Performance stats
+    total_jobs_completed: Mapped[int] = mapped_column(Integer, default=0)
+    total_units_completed: Mapped[int] = mapped_column(Integer, default=0)
+    avg_completion_time_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    success_rate: Mapped[float] = mapped_column(Float, default=1.0)  # 0.0-1.0
+
+    # Reputation score (0-5 stars)
+    reputation_score: Mapped[float] = mapped_column(Float, default=5.0)
+    total_reviews: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Webhook to notify worker of new assignments
+    webhook_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Preferred work types
+    preferred_categories: Mapped[list | None] = mapped_column(JSON, nullable=True)
+
+    last_active_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+    __table_args__ = (
+        Index("ix_worker_availability_status", "status"),
+        Index("ix_worker_availability_reputation", "reputation_score"),
+    )
+
+
+class MarketplaceWorkerAssignment(Base):
+    """
+    Tracks marketplace workers assigned to a gig.
+
+    When a client chooses execution_type=MARKETPLACE, we hire
+    existing AI workers from the marketplace instead of spinning
+    up infrastructure.
+    """
+
+    __tablename__ = "marketplace_worker_assignments"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    gig_id: Mapped[UUID] = mapped_column(ForeignKey("gigs.id", ondelete="CASCADE"))
+    worker_id: Mapped[UUID] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"))
+
+    # Assignment details
+    units_assigned: Mapped[int] = mapped_column(Integer, default=0)
+    units_completed: Mapped[int] = mapped_column(Integer, default=0)
+    unit_range_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    unit_range_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Payment
+    rate_per_unit: Mapped[Decimal] = mapped_column(Numeric(12, 4))
+    total_earned: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0"))
+
+    # Status
+    status: Mapped[str] = mapped_column(String(50), default="assigned")  # assigned, working, completed, failed
+
+    # Tracking
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Performance for this assignment
+    avg_unit_time_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    error_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    __table_args__ = (
+        Index("ix_marketplace_assignments_gig", "gig_id"),
+        Index("ix_marketplace_assignments_worker", "worker_id"),
+        Index("ix_marketplace_assignments_status", "status"),
+    )
+
+
+class MarketplaceWorkerPool(Base):
+    """
+    A pool of marketplace workers for a gig (alternative to infrastructure WorkerPool).
+
+    This manages a collection of hired marketplace AI workers
+    as a unified pool for parallel execution.
+    """
+
+    __tablename__ = "marketplace_worker_pools"
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    gig_id: Mapped[UUID] = mapped_column(ForeignKey("gigs.id", ondelete="CASCADE"))
+    owner_id: Mapped[UUID] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"))
+
+    # Pool configuration
+    name: Mapped[str] = mapped_column(String(200))
+    target_workers: Mapped[int] = mapped_column(Integer, default=1)
+    active_workers: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Worker requirements
+    min_reputation: Mapped[float] = mapped_column(Float, default=0.0)
+    required_capabilities: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    max_rate_per_unit: Mapped[Decimal | None] = mapped_column(Numeric(12, 4), nullable=True)
+
+    # Cost tracking
+    estimated_cost: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0"))
+    actual_cost: Mapped[Decimal] = mapped_column(Numeric(12, 4), default=Decimal("0"))
+
+    # Status
+    status: Mapped[str] = mapped_column(String(50), default="recruiting")
+    # recruiting, ready, working, completed, cancelled
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_marketplace_pools_gig", "gig_id"),
+        Index("ix_marketplace_pools_status", "status"),
     )
