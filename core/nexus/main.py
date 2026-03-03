@@ -60,6 +60,7 @@ from nexus.storage import routes as storage_routes
 from nexus.search import routes as search_routes
 from nexus.gigs import routes as gigs_routes
 from nexus.credits import routes as credits_routes
+from nexus.onboarding import routes as onboarding_routes
 
 settings = get_settings()
 
@@ -385,6 +386,12 @@ app.include_router(
 # Credits (prepaid balance system)
 app.include_router(
     credits_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# AI Self-Onboarding (discovery, registration, referrals)
+app.include_router(
+    onboarding_routes.router,
     prefix=settings.api_prefix,
 )
 
