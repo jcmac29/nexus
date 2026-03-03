@@ -74,7 +74,54 @@ services:
       - ./core:/app
     command: uvicorn nexus.main:app --host 0.0.0.0 --port 8000 --reload
 
+  worker:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    container_name: nexus-worker
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nexus:nexus@db:5432/nexus
+      REDIS_URL: redis://redis:6379/0
+      DEBUG: "true"
+      SECRET_KEY: change-me-in-production
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_ACCESS_KEY: nexus
+      STORAGE_SECRET_KEY: nexus-secret-key
+      STORAGE_BUCKET: nexus-media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./core:/app
+    command: python -m nexus.jobs.worker
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nexus-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - nexus_prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: nexus-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - nexus_grafana_data:/var/lib/grafana
+
 volumes:
   nexus_postgres_data:
   nexus_redis_data:
   nexus_minio_data:
+  nexus_prometheus_data:
+  nexus_grafana_data:

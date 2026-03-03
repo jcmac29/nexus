@@ -1,0 +1,30 @@
+# Nexus Worker Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Poetry
+RUN pip install poetry==1.7.0
+
+# Copy dependency files
+COPY pyproject.toml poetry.lock ./
+
+# Install dependencies (no dev dependencies for production)
+RUN poetry config virtualenvs.create false \
+    && poetry install --no-dev --no-interaction --no-ansi
+
+# Copy application
+COPY nexus/ ./nexus/
+
+# Create non-root user
+RUN useradd -m -u 1000 nexus && chown -R nexus:nexus /app
+USER nexus
+
+# Run worker
+CMD ["python", "-m", "nexus.jobs.worker"]

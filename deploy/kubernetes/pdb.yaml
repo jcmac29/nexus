@@ -1,0 +1,24 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nexus-api-pdb
+  namespace: nexus
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: nexus
+      component: api
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: nexus-worker-pdb
+  namespace: nexus
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: nexus
+      component: worker

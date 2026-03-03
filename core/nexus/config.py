@@ -49,6 +49,19 @@ class Settings(BaseSettings):
     storage_secret_key: str = "nexus-secret-key"
     storage_bucket: str = "nexus-media"
 
+    # Infrastructure Providers (for worker pools)
+    digitalocean_token: str | None = None
+    kubernetes_config_path: str | None = None
+
+    # Gigs/Worker Pools
+    nexus_public_url: str = "https://api.nexus.ai"
+    worker_image: str = "nexus/worker:latest"
+    default_worker_region: str = "nyc3"
+
+    # Environment
+    environment: str = "development"
+    log_level: str = "INFO"
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -11,5 +11,20 @@ resources:
   - redis.yaml
   - minio.yaml
   - nexus-api.yaml
+  - deployment.yaml
+  - service.yaml
   - ingress.yaml
+  - hpa.yaml
+  - pdb.yaml
+  - network-policy.yaml
   - monitoring.yaml
+
+commonLabels:
+  app.kubernetes.io/name: nexus
+  app.kubernetes.io/part-of: nexus-platform
+
+images:
+  - name: nexus/api
+    newTag: latest
+  - name: nexus/worker
+    newTag: latest

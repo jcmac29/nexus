@@ -3,12 +3,22 @@
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from nexus import __version__
 from nexus.config import get_settings
 from nexus.database import init_db
+from nexus.cache import get_cache
+from nexus.observability import (
+    setup_logging,
+    get_metrics,
+    set_app_info,
+    MetricsMiddleware,
+    LoggingMiddleware,
+    TracingMiddleware,
+    health_router,
+)
 from nexus.billing import routes as billing_routes
 from nexus.discovery import routes as discovery_routes
 from nexus.identity import routes as identity_routes
@@ -46,8 +56,18 @@ from nexus.chat import routes as chat_routes
 from nexus.calendar import routes as calendar_routes
 from nexus.documents import routes as documents_routes
 from nexus.devices import routes as devices_routes
+from nexus.storage import routes as storage_routes
+from nexus.search import routes as search_routes
+from nexus.gigs import routes as gigs_routes
+from nexus.credits import routes as credits_routes
 
 settings = get_settings()
+
+# Setup structured logging
+setup_logging(
+    level=settings.log_level if hasattr(settings, 'log_level') else "INFO",
+    format="json" if not settings.debug else "console",
+)
 
 
 @asynccontextmanager
@@ -55,6 +75,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager."""
     # Startup
     await init_db()
+
+    # Initialize cache
+    await get_cache()
+
+    # Set application info for metrics
+    set_app_info(__version__, settings.environment if hasattr(settings, 'environment') else "production")
+
     yield
     # Shutdown (if needed)
 
@@ -77,13 +104,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Observability middleware (order matters - tracing first, then logging, then metrics)
+app.add_middleware(MetricsMiddleware)
+app.add_middleware(LoggingMiddleware)
+app.add_middleware(TracingMiddleware)
+
 
 # --- Health Check ---
 
 
+@app.get("/metrics", tags=["system"], include_in_schema=False)
+async def metrics():
+    """Prometheus metrics endpoint."""
+    return Response(content=get_metrics(), media_type="text/plain")
+
+
+# Include comprehensive health checks
+app.include_router(health_router, prefix="/api/v1")
+
+
 @app.get("/health", tags=["system"])
 async def health_check() -> dict:
-    """Health check endpoint."""
+    """Simple health check endpoint."""
     return {"status": "healthy", "version": __version__}
 
 
@@ -319,6 +361,30 @@ app.include_router(
 # Device Gateway (IoT, drones, robotics, sensors)
 app.include_router(
     devices_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# File storage (S3-compatible)
+app.include_router(
+    storage_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Search (full-text and semantic)
+app.include_router(
+    search_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Gigs marketplace (AI workers bidding on and completing work)
+app.include_router(
+    gigs_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Credits (prepaid balance system)
+app.include_router(
+    credits_routes.router,
     prefix=settings.api_prefix,
 )
 

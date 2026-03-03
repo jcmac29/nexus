@@ -6,7 +6,27 @@ metadata:
 data:
   APP_NAME: "Nexus"
   DEBUG: "false"
+  LOG_LEVEL: "INFO"
   ENVIRONMENT: "production"
   API_PREFIX: "/api/v1"
+
+  # Database
+  DATABASE_HOST: "postgres.nexus.svc.cluster.local"
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: "nexus"
+
+  # Redis
+  REDIS_HOST: "redis.nexus.svc.cluster.local"
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+
+  # Storage
   MINIO_ENDPOINT: "minio:9000"
   MINIO_BUCKET: "nexus-media"
+  S3_REGION: "us-east-1"
+
+  # Feature flags
+  ENABLE_FEDERATION: "true"
+  ENABLE_MARKETPLACE: "true"
+  ENABLE_DEVICES: "true"
+  ENABLE_SEARCH: "true"

@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexus-api
+  namespace: nexus
+  labels:
+    app: nexus
+    component: api
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+  selector:
+    app: nexus
+    component: api
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexus-api
+  namespace: nexus
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: nexus-worker
+  namespace: nexus
