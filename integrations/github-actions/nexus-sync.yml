@@ -1,0 +1,82 @@
+# Nexus GitHub Action - Sync PR and issue context to Nexus
+# Add to .github/workflows/nexus-sync.yml
+
+name: Nexus Sync
+
+on:
+  pull_request:
+    types: [opened, synchronize, closed]
+  issues:
+    types: [opened, closed, labeled]
+  push:
+    branches: [main, master, develop]
+
+jobs:
+  sync-to-nexus:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync PR to Nexus
+        if: github.event_name == 'pull_request'
+        run: |
+          curl -X POST "${{ secrets.NEXUS_URL }}/api/v1/memory" \
+            -H "Authorization: Bearer ${{ secrets.NEXUS_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "key": "github:${{ github.repository }}:pr:${{ github.event.pull_request.number }}",
+              "value": {
+                "type": "pull_request",
+                "number": ${{ github.event.pull_request.number }},
+                "title": "${{ github.event.pull_request.title }}",
+                "author": "${{ github.event.pull_request.user.login }}",
+                "state": "${{ github.event.pull_request.state }}",
+                "action": "${{ github.event.action }}",
+                "base": "${{ github.event.pull_request.base.ref }}",
+                "head": "${{ github.event.pull_request.head.ref }}",
+                "url": "${{ github.event.pull_request.html_url }}"
+              },
+              "text_content": "PR #${{ github.event.pull_request.number }}: ${{ github.event.pull_request.title }}\nBy: ${{ github.event.pull_request.user.login }}\nStatus: ${{ github.event.action }}\n\n${{ github.event.pull_request.body }}",
+              "tags": ["github", "pr", "${{ github.repository }}"],
+              "scope": "shared"
+            }'
+
+      - name: Sync Issue to Nexus
+        if: github.event_name == 'issues'
+        run: |
+          curl -X POST "${{ secrets.NEXUS_URL }}/api/v1/memory" \
+            -H "Authorization: Bearer ${{ secrets.NEXUS_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "key": "github:${{ github.repository }}:issue:${{ github.event.issue.number }}",
+              "value": {
+                "type": "issue",
+                "number": ${{ github.event.issue.number }},
+                "title": "${{ github.event.issue.title }}",
+                "author": "${{ github.event.issue.user.login }}",
+                "state": "${{ github.event.issue.state }}",
+                "action": "${{ github.event.action }}",
+                "url": "${{ github.event.issue.html_url }}"
+              },
+              "text_content": "Issue #${{ github.event.issue.number }}: ${{ github.event.issue.title }}\nBy: ${{ github.event.issue.user.login }}\n\n${{ github.event.issue.body }}",
+              "tags": ["github", "issue", "${{ github.repository }}"],
+              "scope": "shared"
+            }'
+
+      - name: Sync Push to Nexus
+        if: github.event_name == 'push'
+        run: |
+          curl -X POST "${{ secrets.NEXUS_URL }}/api/v1/memory" \
+            -H "Authorization: Bearer ${{ secrets.NEXUS_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "key": "github:${{ github.repository }}:push:${{ github.sha }}",
+              "value": {
+                "type": "push",
+                "sha": "${{ github.sha }}",
+                "ref": "${{ github.ref }}",
+                "pusher": "${{ github.actor }}",
+                "commits": ${{ toJson(github.event.commits) }}
+              },
+              "text_content": "Push to ${{ github.repository }} by ${{ github.actor }}\nBranch: ${{ github.ref }}\nCommit: ${{ github.event.head_commit.message }}",
+              "tags": ["github", "push", "${{ github.repository }}"],
+              "scope": "shared"
+            }'

@@ -22,6 +22,7 @@ from nexus.ratelimit import routes as ratelimit_routes
 from nexus.health import routes as health_routes
 from nexus.marketplace import routes as marketplace_routes
 from nexus.teams import routes as teams_routes
+from nexus.media import routes as media_routes
 
 settings = get_settings()
 
@@ -151,6 +152,12 @@ app.include_router(
 # Team collaboration routes
 app.include_router(
     teams_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Media storage routes
+app.include_router(
+    media_routes.router,
     prefix=settings.api_prefix,
 )
 

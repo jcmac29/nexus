@@ -1,0 +1,45 @@
+#!/bin/bash
+# Nexus Git Hook - Stores commit context for team knowledge sharing
+# Install: cp post-commit .git/hooks/ && chmod +x .git/hooks/post-commit
+
+NEXUS_URL="${NEXUS_URL:-http://localhost:8000}"
+NEXUS_API_KEY="${NEXUS_API_KEY:-}"
+
+if [ -z "$NEXUS_API_KEY" ]; then
+    exit 0  # Silently skip if not configured
+fi
+
+# Get commit info
+COMMIT_HASH=$(git rev-parse HEAD)
+COMMIT_MSG=$(git log -1 --pretty=%B)
+AUTHOR=$(git log -1 --pretty=%an)
+FILES_CHANGED=$(git diff-tree --no-commit-id --name-only -r HEAD | head -20 | tr '\n' ', ')
+PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel)")
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
+# Build the memory payload
+read -r -d '' PAYLOAD << EOF
+{
+    "key": "git:${PROJECT_NAME}:${COMMIT_HASH:0:8}",
+    "value": {
+        "type": "commit",
+        "hash": "${COMMIT_HASH}",
+        "message": $(echo "$COMMIT_MSG" | jq -Rs .),
+        "author": "${AUTHOR}",
+        "branch": "${BRANCH}",
+        "files": "${FILES_CHANGED}",
+        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    },
+    "text_content": "Git commit by ${AUTHOR} on ${PROJECT_NAME}/${BRANCH}: ${COMMIT_MSG}\n\nFiles changed: ${FILES_CHANGED}",
+    "tags": ["git", "commit", "${PROJECT_NAME}", "${BRANCH}"],
+    "scope": "shared"
+}
+EOF
+
+# Send to Nexus
+curl -s -X POST "${NEXUS_URL}/api/v1/memory" \
+    -H "Authorization: Bearer ${NEXUS_API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d "$PAYLOAD" > /dev/null 2>&1 &
+
+exit 0

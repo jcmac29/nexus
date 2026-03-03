@@ -1,0 +1,57 @@
+<idea-plugin>
+    <id>com.nexus.plugin</id>
+    <name>Nexus AI</name>
+    <version>0.1.0</version>
+    <vendor>Nexus</vendor>
+
+    <description><![CDATA[
+        Connect your JetBrains IDE to Nexus for AI-powered development with shared team context.
+
+        Features:
+        <ul>
+            <li>Store code context in Nexus memory</li>
+            <li>Search shared knowledge base</li>
+            <li>Ask AI for help with code</li>
+            <li>Auto-sync files on save</li>
+            <li>Team collaboration via shared context</li>
+        </ul>
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <applicationConfigurable
+            parentId="tools"
+            instance="com.nexus.plugin.NexusConfigurable"
+            id="com.nexus.plugin.NexusConfigurable"
+            displayName="Nexus AI"/>
+        <applicationService
+            serviceImplementation="com.nexus.plugin.NexusSettings"/>
+    </extensions>
+
+    <actions>
+        <group id="Nexus.Menu" text="Nexus" popup="true">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+            <action id="Nexus.StoreContext"
+                class="com.nexus.plugin.StoreContextAction"
+                text="Store Current File"
+                description="Store current file context in Nexus"/>
+            <action id="Nexus.Search"
+                class="com.nexus.plugin.SearchAction"
+                text="Search Knowledge Base"
+                description="Search Nexus knowledge base"/>
+            <action id="Nexus.AskAI"
+                class="com.nexus.plugin.AskAIAction"
+                text="Ask AI"
+                description="Ask Nexus AI for help"/>
+            <separator/>
+        </group>
+
+        <action id="Nexus.AskAI.Editor"
+            class="com.nexus.plugin.AskAIAction"
+            text="Ask Nexus AI">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="ctrl shift N"/>
+        </action>
+    </actions>
+</idea-plugin>

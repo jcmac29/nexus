@@ -29,6 +29,24 @@ services:
       timeout: 5s
       retries: 5
 
+  minio:
+    image: minio/minio:latest
+    container_name: nexus-minio
+    environment:
+      MINIO_ROOT_USER: nexus
+      MINIO_ROOT_PASSWORD: nexus-secret-key
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - nexus_minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   api:
     build:
       context: ./core
@@ -39,12 +57,18 @@ services:
       REDIS_URL: redis://redis:6379/0
       DEBUG: "true"
       SECRET_KEY: change-me-in-production
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_ACCESS_KEY: nexus
+      STORAGE_SECRET_KEY: nexus-secret-key
+      STORAGE_BUCKET: nexus-media
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     volumes:
       - ./core:/app
@@ -53,3 +77,4 @@ services:
 volumes:
   nexus_postgres_data:
   nexus_redis_data:
+  nexus_minio_data:

@@ -72,3 +72,10 @@ htmlcov/
 *.pem
 *.key
 credentials.json
+# Integration build artifacts
+integrations/xcode/NexusXcode/.build/
+integrations/vscode/out/
+integrations/vscode/node_modules/
+integrations/jetbrains/build/
+integrations/obsidian/node_modules/
+integrations/obsidian/main.js

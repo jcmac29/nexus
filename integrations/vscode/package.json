@@ -1,0 +1,119 @@
+{
+  "name": "nexus-vscode",
+  "displayName": "Nexus AI",
+  "description": "Connect VS Code to Nexus for AI-powered development with shared context",
+  "version": "0.1.0",
+  "publisher": "nexus",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning",
+    "Programming Languages"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "nexus.storeContext",
+        "title": "Nexus: Store Current File Context"
+      },
+      {
+        "command": "nexus.search",
+        "title": "Nexus: Search Knowledge Base"
+      },
+      {
+        "command": "nexus.askAI",
+        "title": "Nexus: Ask AI"
+      },
+      {
+        "command": "nexus.explainCode",
+        "title": "Nexus: Explain Selected Code"
+      },
+      {
+        "command": "nexus.fixError",
+        "title": "Nexus: Fix This Error"
+      },
+      {
+        "command": "nexus.syncProject",
+        "title": "Nexus: Sync Project to Memory"
+      },
+      {
+        "command": "nexus.showTeamContext",
+        "title": "Nexus: Show Team Activity"
+      }
+    ],
+    "configuration": {
+      "title": "Nexus",
+      "properties": {
+        "nexus.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "Nexus server URL"
+        },
+        "nexus.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Your Nexus API key"
+        },
+        "nexus.autoSync": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically sync file context on save"
+        },
+        "nexus.syncExtensions": {
+          "type": "array",
+          "default": ["ts", "js", "py", "go", "rs", "java", "swift", "rb"],
+          "description": "File extensions to auto-sync"
+        }
+      }
+    },
+    "keybindings": [
+      {
+        "command": "nexus.askAI",
+        "key": "ctrl+shift+n",
+        "mac": "cmd+shift+n"
+      },
+      {
+        "command": "nexus.search",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f",
+        "when": "editorTextFocus"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "nexus.explainCode",
+          "when": "editorHasSelection",
+          "group": "nexus"
+        },
+        {
+          "command": "nexus.askAI",
+          "group": "nexus"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0"
+  }
+}

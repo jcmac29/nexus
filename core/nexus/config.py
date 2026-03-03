@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     stripe_publishable_key: str | None = None
     stripe_webhook_secret: str | None = None
 
+    # Media Storage (MinIO/S3)
+    storage_endpoint: str = "http://minio:9000"
+    storage_access_key: str = "nexus"
+    storage_secret_key: str = "nexus-secret-key"
+    storage_bucket: str = "nexus-media"
+
 
 @lru_cache
 def get_settings() -> Settings:

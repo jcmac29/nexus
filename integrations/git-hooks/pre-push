@@ -1,0 +1,38 @@
+#!/bin/bash
+# Nexus Git Hook - Notifies team of push events
+# Install: cp pre-push .git/hooks/ && chmod +x .git/hooks/pre-push
+
+NEXUS_URL="${NEXUS_URL:-http://localhost:8000}"
+NEXUS_API_KEY="${NEXUS_API_KEY:-}"
+
+if [ -z "$NEXUS_API_KEY" ]; then
+    exit 0
+fi
+
+PROJECT_NAME=$(basename "$(git rev-parse --show-toplevel)")
+BRANCH=$(git rev-parse --abbrev-ref HEAD)
+AUTHOR=$(git config user.name)
+COMMIT_COUNT=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "unknown")
+
+read -r -d '' PAYLOAD << EOF
+{
+    "key": "git:${PROJECT_NAME}:push:$(date +%s)",
+    "value": {
+        "type": "push",
+        "branch": "${BRANCH}",
+        "author": "${AUTHOR}",
+        "commit_count": "${COMMIT_COUNT}",
+        "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    },
+    "text_content": "${AUTHOR} is pushing ${COMMIT_COUNT} commits to ${PROJECT_NAME}/${BRANCH}",
+    "tags": ["git", "push", "${PROJECT_NAME}", "${BRANCH}"],
+    "scope": "shared"
+}
+EOF
+
+curl -s -X POST "${NEXUS_URL}/api/v1/memory" \
+    -H "Authorization: Bearer ${NEXUS_API_KEY}" \
+    -H "Content-Type: application/json" \
+    -d "$PAYLOAD" > /dev/null 2>&1 &
+
+exit 0
