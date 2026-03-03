@@ -1,0 +1,529 @@
+"""Device Gateway API routes."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from uuid import UUID
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from nexus.database import get_db
+from nexus.auth import get_current_agent
+from nexus.identity.models import Agent
+from nexus.devices.service import DeviceGatewayService
+from nexus.devices.models import DeviceType, DeviceProtocol, DeviceStatus, CommandPriority
+
+router = APIRouter(prefix="/devices", tags=["devices"])
+
+
+class RegisterDeviceRequest(BaseModel):
+    device_id: str
+    name: str
+    device_type: str
+    protocol: str = "mqtt"
+    connection_config: dict | None = None
+    capabilities: list[str] | None = None
+    sensors: list[str] | None = None
+    ai_agent_id: str | None = None
+    autonomy_level: str = "supervised"
+    fleet_id: str | None = None
+    geofence: dict | None = None
+    metadata: dict | None = None
+
+
+class SendCommandRequest(BaseModel):
+    command_type: str
+    parameters: dict | None = None
+    priority: str = "normal"
+    timeout_seconds: int = 30
+
+
+class TelemetryRequest(BaseModel):
+    timestamp: str
+    latitude: float | None = None
+    longitude: float | None = None
+    altitude: float | None = None
+    heading: float | None = None
+    speed: float | None = None
+    battery_level: float | None = None
+    signal_strength: float | None = None
+    sensors: dict | None = None
+    raw_data: dict | None = None
+
+
+class CreateFleetRequest(BaseModel):
+    name: str
+    description: str | None = None
+    orchestrator_agent_id: str | None = None
+    coordination_mode: str = "independent"
+    geofence: dict | None = None
+
+
+class CreateMissionRequest(BaseModel):
+    name: str
+    mission_type: str
+    device_ids: list[str] | None = None
+    fleet_id: str | None = None
+    waypoints: list[dict] | None = None
+    parameters: dict | None = None
+    scheduled_start: str | None = None
+
+
+# --- Device Registration ---
+
+@router.post("/register")
+async def register_device(
+    request: RegisterDeviceRequest,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Register a new device."""
+    service = DeviceGatewayService(db)
+
+    type_map = {
+        "drone": DeviceType.DRONE,
+        "robot": DeviceType.ROBOT,
+        "vehicle": DeviceType.VEHICLE,
+        "sensor": DeviceType.SENSOR,
+        "camera": DeviceType.CAMERA,
+        "actuator": DeviceType.ACTUATOR,
+        "gateway": DeviceType.GATEWAY,
+        "wearable": DeviceType.WEARABLE,
+        "industrial": DeviceType.INDUSTRIAL,
+        "custom": DeviceType.CUSTOM,
+    }
+    protocol_map = {
+        "mqtt": DeviceProtocol.MQTT,
+        "mavlink": DeviceProtocol.MAVLINK,
+        "modbus": DeviceProtocol.MODBUS,
+        "opcua": DeviceProtocol.OPCUA,
+        "coap": DeviceProtocol.COAP,
+        "http": DeviceProtocol.HTTP,
+        "websocket": DeviceProtocol.WEBSOCKET,
+        "lora": DeviceProtocol.LORA,
+        "custom": DeviceProtocol.CUSTOM,
+    }
+
+    device = await service.register_device(
+        device_id=request.device_id,
+        name=request.name,
+        device_type=type_map.get(request.device_type, DeviceType.CUSTOM),
+        owner_id=agent.id,
+        protocol=protocol_map.get(request.protocol, DeviceProtocol.MQTT),
+        connection_config=request.connection_config,
+        capabilities=request.capabilities,
+        sensors=request.sensors,
+        ai_agent_id=UUID(request.ai_agent_id) if request.ai_agent_id else None,
+        autonomy_level=request.autonomy_level,
+        fleet_id=UUID(request.fleet_id) if request.fleet_id else None,
+        geofence=request.geofence,
+        metadata=request.metadata,
+    )
+
+    return {
+        "id": str(device.id),
+        "device_id": device.device_id,
+        "name": device.name,
+        "device_type": device.device_type.value,
+        "protocol": device.protocol.value,
+        "status": device.status.value,
+    }
+
+
+@router.get("/")
+async def list_devices(
+    device_type: str | None = None,
+    fleet_id: str | None = None,
+    status: str | None = None,
+    limit: int = Query(default=100, le=500),
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """List devices."""
+    service = DeviceGatewayService(db)
+
+    type_map = {"drone": DeviceType.DRONE, "robot": DeviceType.ROBOT, "sensor": DeviceType.SENSOR}
+    status_map = {"online": DeviceStatus.ONLINE, "offline": DeviceStatus.OFFLINE, "error": DeviceStatus.ERROR}
+
+    devices = await service.list_devices(
+        owner_id=agent.id,
+        device_type=type_map.get(device_type) if device_type else None,
+        fleet_id=UUID(fleet_id) if fleet_id else None,
+        status=status_map.get(status) if status else None,
+        limit=limit,
+    )
+
+    return [
+        {
+            "id": str(d.id),
+            "device_id": d.device_id,
+            "name": d.name,
+            "device_type": d.device_type.value,
+            "status": d.status.value,
+            "latitude": d.latitude,
+            "longitude": d.longitude,
+            "battery_level": d.battery_level,
+            "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None,
+        }
+        for d in devices
+    ]
+
+
+@router.get("/{device_id}")
+async def get_device(
+    device_id: str,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get device details."""
+    service = DeviceGatewayService(db)
+    device = await service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+
+    return {
+        "id": str(device.id),
+        "device_id": device.device_id,
+        "name": device.name,
+        "device_type": device.device_type.value,
+        "protocol": device.protocol.value,
+        "status": device.status.value,
+        "latitude": device.latitude,
+        "longitude": device.longitude,
+        "altitude": device.altitude,
+        "heading": device.heading,
+        "speed": device.speed,
+        "battery_level": device.battery_level,
+        "signal_strength": device.signal_strength,
+        "capabilities": device.capabilities,
+        "sensors": device.sensors,
+        "health_status": device.health_status,
+        "autonomy_level": device.autonomy_level,
+        "geofence": device.geofence,
+        "last_seen_at": device.last_seen_at.isoformat() if device.last_seen_at else None,
+        "last_telemetry_at": device.last_telemetry_at.isoformat() if device.last_telemetry_at else None,
+    }
+
+
+# --- Commands ---
+
+@router.post("/{device_id}/commands")
+async def send_command(
+    device_id: str,
+    request: SendCommandRequest,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Send a command to a device."""
+    service = DeviceGatewayService(db)
+
+    priority_map = {
+        "emergency": CommandPriority.EMERGENCY,
+        "critical": CommandPriority.CRITICAL,
+        "high": CommandPriority.HIGH,
+        "normal": CommandPriority.NORMAL,
+        "low": CommandPriority.LOW,
+    }
+
+    command = await service.send_command(
+        device_id=device_id,
+        command_type=request.command_type,
+        parameters=request.parameters,
+        priority=priority_map.get(request.priority, CommandPriority.NORMAL),
+        sender_id=agent.id,
+        sender_type="agent",
+        timeout_seconds=request.timeout_seconds,
+    )
+
+    return {
+        "command_id": command.command_id,
+        "status": command.status.value,
+        "sent_at": command.sent_at.isoformat() if command.sent_at else None,
+    }
+
+
+@router.post("/{device_id}/emergency-stop")
+async def emergency_stop(
+    device_id: str,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Emergency stop a device."""
+    service = DeviceGatewayService(db)
+    command = await service.emergency_stop(device_id, agent.id)
+    return {"command_id": command.command_id, "status": command.status.value}
+
+
+@router.post("/{device_id}/return-to-base")
+async def return_to_base(
+    device_id: str,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return device to base/home."""
+    service = DeviceGatewayService(db)
+    command = await service.return_to_base(device_id, agent.id)
+    return {"command_id": command.command_id, "status": command.status.value}
+
+
+# --- Telemetry ---
+
+@router.post("/{device_id}/telemetry")
+async def ingest_telemetry(
+    device_id: str,
+    request: TelemetryRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Ingest telemetry from a device (device-facing endpoint)."""
+    service = DeviceGatewayService(db)
+
+    telemetry = await service.ingest_telemetry(
+        device_id=device_id,
+        timestamp=datetime.fromisoformat(request.timestamp),
+        latitude=request.latitude,
+        longitude=request.longitude,
+        altitude=request.altitude,
+        heading=request.heading,
+        speed=request.speed,
+        battery_level=request.battery_level,
+        signal_strength=request.signal_strength,
+        sensors=request.sensors,
+        raw_data=request.raw_data,
+    )
+
+    return {"id": str(telemetry.id), "received": True}
+
+
+@router.get("/{device_id}/telemetry")
+async def get_telemetry_history(
+    device_id: str,
+    start_time: str,
+    end_time: str | None = None,
+    limit: int = Query(default=1000, le=5000),
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get telemetry history for a device."""
+    service = DeviceGatewayService(db)
+
+    telemetry = await service.get_telemetry_history(
+        device_id=device_id,
+        start_time=datetime.fromisoformat(start_time),
+        end_time=datetime.fromisoformat(end_time) if end_time else None,
+        limit=limit,
+    )
+
+    return [
+        {
+            "timestamp": t.timestamp.isoformat(),
+            "latitude": t.latitude,
+            "longitude": t.longitude,
+            "altitude": t.altitude,
+            "heading": t.heading,
+            "speed": t.speed,
+            "battery_level": t.battery_level,
+            "sensors": t.sensors,
+        }
+        for t in telemetry
+    ]
+
+
+# --- Events ---
+
+@router.get("/{device_id}/events")
+async def get_device_events(
+    device_id: str,
+    severity: str | None = None,
+    unresolved_only: bool = False,
+    limit: int = Query(default=100, le=500),
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get events for a device."""
+    service = DeviceGatewayService(db)
+    events = await service.get_device_events(
+        device_id=device_id,
+        severity=severity,
+        unresolved_only=unresolved_only,
+        limit=limit,
+    )
+
+    return [
+        {
+            "id": str(e.id),
+            "event_type": e.event_type,
+            "severity": e.severity,
+            "message": e.message,
+            "data": e.data,
+            "latitude": e.latitude,
+            "longitude": e.longitude,
+            "is_resolved": e.is_resolved,
+            "timestamp": e.timestamp.isoformat(),
+        }
+        for e in events
+    ]
+
+
+# --- Fleets ---
+
+@router.post("/fleets")
+async def create_fleet(
+    request: CreateFleetRequest,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a device fleet."""
+    service = DeviceGatewayService(db)
+    fleet = await service.create_fleet(
+        name=request.name,
+        owner_id=agent.id,
+        description=request.description,
+        orchestrator_agent_id=UUID(request.orchestrator_agent_id) if request.orchestrator_agent_id else None,
+        coordination_mode=request.coordination_mode,
+        geofence=request.geofence,
+    )
+
+    return {
+        "id": str(fleet.id),
+        "name": fleet.name,
+        "coordination_mode": fleet.coordination_mode,
+    }
+
+
+@router.post("/fleets/{fleet_id}/emergency-stop")
+async def fleet_emergency_stop(
+    fleet_id: str,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Emergency stop all devices in a fleet."""
+    service = DeviceGatewayService(db)
+    commands = await service.fleet_emergency_stop(UUID(fleet_id), agent.id)
+    return {"commands_sent": len(commands)}
+
+
+@router.post("/{device_id}/assign-fleet/{fleet_id}")
+async def assign_to_fleet(
+    device_id: str,
+    fleet_id: str,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Assign a device to a fleet."""
+    service = DeviceGatewayService(db)
+    await service.assign_to_fleet(device_id, UUID(fleet_id))
+    return {"status": "assigned"}
+
+
+# --- Missions ---
+
+@router.post("/missions")
+async def create_mission(
+    request: CreateMissionRequest,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a mission."""
+    service = DeviceGatewayService(db)
+    mission = await service.create_mission(
+        name=request.name,
+        owner_id=agent.id,
+        mission_type=request.mission_type,
+        device_ids=request.device_ids,
+        fleet_id=UUID(request.fleet_id) if request.fleet_id else None,
+        waypoints=request.waypoints,
+        parameters=request.parameters,
+        scheduled_start=datetime.fromisoformat(request.scheduled_start) if request.scheduled_start else None,
+    )
+
+    return {
+        "id": str(mission.id),
+        "name": mission.name,
+        "status": mission.status,
+    }
+
+
+@router.post("/missions/{mission_id}/start")
+async def start_mission(
+    mission_id: str,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Start a mission."""
+    service = DeviceGatewayService(db)
+    mission = await service.start_mission(UUID(mission_id))
+    return {"id": str(mission.id), "status": mission.status}
+
+
+@router.post("/missions/{mission_id}/abort")
+async def abort_mission(
+    mission_id: str,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Abort a mission."""
+    service = DeviceGatewayService(db)
+    mission = await service.abort_mission(UUID(mission_id), agent.id)
+    return {"id": str(mission.id), "status": mission.status}
+
+
+# --- WebSocket for Real-time Telemetry ---
+
+@router.websocket("/stream/{device_id}")
+async def device_stream(
+    websocket: WebSocket,
+    device_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """WebSocket for real-time device telemetry and commands."""
+    await websocket.accept()
+
+    service = DeviceGatewayService(db)
+    device = await service.get_device(device_id)
+    if not device:
+        await websocket.close(code=4004, reason="Device not found")
+        return
+
+    try:
+        # Update device status to online
+        await service.update_device_status(device_id, DeviceStatus.ONLINE)
+
+        while True:
+            data = await websocket.receive_json()
+
+            if data.get("type") == "telemetry":
+                await service.ingest_telemetry(
+                    device_id=device_id,
+                    timestamp=datetime.fromisoformat(data.get("timestamp", datetime.utcnow().isoformat())),
+                    latitude=data.get("latitude"),
+                    longitude=data.get("longitude"),
+                    altitude=data.get("altitude"),
+                    heading=data.get("heading"),
+                    speed=data.get("speed"),
+                    battery_level=data.get("battery_level"),
+                    sensors=data.get("sensors"),
+                )
+                await websocket.send_json({"type": "ack", "status": "received"})
+
+            elif data.get("type") == "command_response":
+                command_id = data.get("command_id")
+                success = data.get("success", True)
+                await service.complete_command(
+                    command_id=command_id,
+                    success=success,
+                    response=data.get("response"),
+                    error_message=data.get("error"),
+                )
+
+            elif data.get("type") == "heartbeat":
+                await service.update_device_status(
+                    device_id,
+                    DeviceStatus.ONLINE,
+                    battery_level=data.get("battery_level"),
+                    signal_strength=data.get("signal_strength"),
+                )
+                await websocket.send_json({"type": "heartbeat_ack"})
+
+    except WebSocketDisconnect:
+        await service.update_device_status(device_id, DeviceStatus.OFFLINE)

@@ -45,6 +45,7 @@ from nexus.notifications import routes as notifications_routes
 from nexus.chat import routes as chat_routes
 from nexus.calendar import routes as calendar_routes
 from nexus.documents import routes as documents_routes
+from nexus.devices import routes as devices_routes
 
 settings = get_settings()
 
@@ -312,6 +313,12 @@ app.include_router(
 # Collaborative documents
 app.include_router(
     documents_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Device Gateway (IoT, drones, robotics, sensors)
+app.include_router(
+    devices_routes.router,
     prefix=settings.api_prefix,
 )
 
