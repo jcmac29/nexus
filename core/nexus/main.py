@@ -25,6 +25,7 @@ from nexus.teams import routes as teams_routes
 from nexus.media import routes as media_routes
 from nexus.federation import routes as federation_routes
 from nexus.public import routes as public_routes
+from nexus.profiles import routes as profile_routes
 
 settings = get_settings()
 
@@ -172,6 +173,12 @@ app.include_router(
 # Public marketplace routes (safe public capability sharing)
 app.include_router(
     public_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Profile, settings, prompts, and subscription routes
+app.include_router(
+    profile_routes.router,
     prefix=settings.api_prefix,
 )
 
