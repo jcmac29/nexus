@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus - Let Your AIs Talk to Each Other</title>
+    <meta name="description" content="The universal connector for AI agents. Let Claude call Gemini, connect your terminal AI to cloud agents, and build automated workflows across any AI system.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #030303;
+            --surface: #0a0a0c;
+            --surface-2: #111114;
+            --surface-3: #18181b;
+            --border: rgba(255, 255, 255, 0.06);
+            --border-light: rgba(255, 255, 255, 0.1);
+            --text: #fafafa;
+            --text-secondary: #a1a1aa;
+            --text-muted: #52525b;
+            --accent: #8b5cf6;
+            --accent-2: #6366f1;
+            --gradient-1: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #3b82f6 100%);
+            --green: #22c55e;
+            --blue: #3b82f6;
+            --orange: #f97316;
+            --pink: #ec4899;
+            --cyan: #06b6d4;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        .bg-gradient {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background:
+                radial-gradient(ellipse at 20% 20%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 50%, rgba(99, 102, 241, 0.06) 0%, transparent 40%),
+                radial-gradient(ellipse at 40% 80%, rgba(6, 182, 212, 0.04) 0%, transparent 50%);
+            animation: bgPulse 15s ease-in-out infinite alternate;
+        }
+
+        @keyframes bgPulse {
+            0% { opacity: 1; }
+            100% { opacity: 0.7; }
+        }
+
+        .container { max-width: 1280px; margin: 0 auto; padding: 0 32px; }
+
+        /* Nav */
+        nav {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 100;
+            padding: 16px 0;
+            background: rgba(3, 3, 3, 0.85);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid var(--border);
+        }
+
+        nav .container { display: flex; justify-content: space-between; align-items: center; }
+
+        .logo {
+            font-size: 22px;
+            font-weight: 700;
+            color: var(--text);
+            text-decoration: none;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--gradient-1);
+            border-radius: 10px;
+            position: relative;
+        }
+
+        .logo-icon::before {
+            content: '';
+            position: absolute;
+            inset: 2px;
+            background: var(--bg);
+            border-radius: 8px;
+        }
+
+        .logo-icon::after {
+            content: '';
+            position: absolute;
+            inset: 6px;
+            background: var(--gradient-1);
+            border-radius: 5px;
+        }
+
+        .nav-links { display: flex; gap: 32px; align-items: center; }
+        .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 14px; font-weight: 500; transition: color 0.2s; }
+        .nav-links a:hover { color: var(--text); }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            text-decoration: none;
+            transition: all 0.3s;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--gradient-1);
+            color: white;
+            box-shadow: 0 4px 24px rgba(139, 92, 246, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 40px rgba(139, 92, 246, 0.4);
+        }
+
+        .btn-secondary {
+            background: var(--surface-2);
+            color: var(--text);
+            border: 1px solid var(--border-light);
+        }
+
+        .btn-secondary:hover {
+            background: var(--surface-3);
+            transform: translateY(-2px);
+        }
+
+        /* Hero */
+        .hero {
+            padding: 180px 0 100px;
+            text-align: center;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 18px;
+            background: rgba(139, 92, 246, 0.1);
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            border-radius: 100px;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--accent);
+            margin-bottom: 28px;
+        }
+
+        .badge-dot {
+            width: 8px;
+            height: 8px;
+            background: var(--green);
+            border-radius: 50%;
+            box-shadow: 0 0 12px rgba(34, 197, 94, 0.6);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+        h1 {
+            font-size: 68px;
+            font-weight: 800;
+            line-height: 1.05;
+            margin-bottom: 24px;
+            letter-spacing: -0.04em;
+            background: linear-gradient(180deg, #fff 20%, rgba(255,255,255,0.6) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        h1 span {
+            background: var(--gradient-1);
+            -webkit-background-clip: text;
+        }
+
+        .hero p {
+            font-size: 19px;
+            color: var(--text-secondary);
+            max-width: 580px;
+            margin: 0 auto 40px;
+            line-height: 1.7;
+        }
+
+        .hero-buttons { display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+
+        /* Workflow Visualization */
+        .workflow-section {
+            padding: 60px 0 100px;
+        }
+
+        .workflow-container {
+            background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 100%);
+            border: 1px solid var(--border-light);
+            border-radius: 24px;
+            padding: 60px 40px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .workflow-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: var(--gradient-1);
+            opacity: 0.5;
+        }
+
+        .workflow-title {
+            text-align: center;
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 40px;
+        }
+
+        .workflow-diagram {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .workflow-node {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            padding: 20px 24px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            min-width: 140px;
+            transition: all 0.3s;
+            position: relative;
+        }
+
+        .workflow-node:hover {
+            border-color: var(--accent);
+            transform: translateY(-4px);
+            box-shadow: 0 12px 40px rgba(139, 92, 246, 0.15);
+        }
+
+        .workflow-node.active {
+            border-color: var(--accent);
+            box-shadow: 0 0 30px rgba(139, 92, 246, 0.2);
+        }
+
+        .workflow-node.active::after {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 18px;
+            border: 2px solid var(--accent);
+            animation: nodePulse 2s infinite;
+        }
+
+        @keyframes nodePulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        .node-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .node-icon.claude { background: linear-gradient(135deg, #d97706, #f59e0b); }
+        .node-icon.nexus { background: var(--gradient-1); }
+        .node-icon.gemini { background: linear-gradient(135deg, #3b82f6, #8b5cf6); }
+        .node-icon.custom { background: linear-gradient(135deg, #06b6d4, #22d3ee); }
+        .node-icon.code { background: linear-gradient(135deg, #10b981, #34d399); }
+
+        .node-name { font-weight: 600; font-size: 14px; }
+        .node-action { font-size: 12px; color: var(--text-muted); }
+
+        .workflow-arrow {
+            display: flex;
+            align-items: center;
+            color: var(--accent);
+            font-size: 20px;
+            position: relative;
+        }
+
+        .workflow-arrow::before {
+            content: '';
+            width: 40px;
+            height: 2px;
+            background: linear-gradient(90deg, var(--border), var(--accent));
+        }
+
+        .workflow-arrow .dot {
+            width: 8px;
+            height: 8px;
+            background: var(--accent);
+            border-radius: 50%;
+            position: absolute;
+            animation: flowDot 1.5s ease-in-out infinite;
+        }
+
+        @keyframes flowDot {
+            0% { left: 0; opacity: 0; }
+            50% { opacity: 1; }
+            100% { left: 100%; opacity: 0; }
+        }
+
+        .workflow-label {
+            position: absolute;
+            bottom: -24px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        .workflow-steps {
+            display: flex;
+            justify-content: center;
+            gap: 40px;
+            margin-top: 50px;
+            flex-wrap: wrap;
+        }
+
+        .workflow-step {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .step-num {
+            width: 28px;
+            height: 28px;
+            background: var(--surface-3);
+            border: 1px solid var(--border-light);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 12px;
+            color: var(--accent);
+        }
+
+        /* Integrations */
+        .integrations {
+            padding: 60px 0;
+            border-top: 1px solid var(--border);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .integrations-label {
+            text-align: center;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 32px;
+        }
+
+        .integrations-grid {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 48px;
+            flex-wrap: wrap;
+        }
+
+        .integration-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 20px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            transition: all 0.2s;
+        }
+
+        .integration-item:hover {
+            border-color: var(--border-light);
+            transform: translateY(-2px);
+        }
+
+        .integration-icon {
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .integration-name {
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        /* Section styles */
+        .section-header {
+            text-align: center;
+            margin-bottom: 64px;
+        }
+
+        .section-eyebrow {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 0.15em;
+            margin-bottom: 16px;
+        }
+
+        .section-title {
+            font-size: 44px;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin-bottom: 16px;
+            background: linear-gradient(180deg, #fff 0%, rgba(255,255,255,0.7) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .section-subtitle {
+            color: var(--text-secondary);
+            font-size: 18px;
+            max-width: 550px;
+            margin: 0 auto;
+        }
+
+        /* Use Cases */
+        .use-cases { padding: 100px 0; }
+
+        .use-cases-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 24px;
+        }
+
+        .use-case-card {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 36px;
+            transition: all 0.3s;
+        }
+
+        .use-case-card:hover {
+            border-color: rgba(139, 92, 246, 0.3);
+            transform: translateY(-4px);
+        }
+
+        .use-case-icons {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+
+        .use-case-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 16px;
+        }
+
+        .use-case-arrow { color: var(--accent); font-size: 16px; }
+
+        .use-case-card h3 { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
+        .use-case-card p { color: var(--text-secondary); font-size: 14px; line-height: 1.7; }
+
+        /* Features */
+        .features {
+            padding: 100px 0;
+            border-top: 1px solid var(--border);
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+        }
+
+        .feature-card {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 28px;
+            transition: all 0.3s;
+        }
+
+        .feature-card:hover { border-color: rgba(139, 92, 246, 0.2); }
+
+        .feature-icon {
+            width: 44px;
+            height: 44px;
+            background: var(--gradient-1);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 16px;
+            font-size: 20px;
+        }
+
+        .feature-card h3 { font-size: 16px; font-weight: 700; margin-bottom: 8px; }
+        .feature-card p { color: var(--text-secondary); font-size: 13px; line-height: 1.6; }
+
+        /* Code Example */
+        .code-section { padding: 80px 0; }
+
+        .code-preview {
+            max-width: 750px;
+            margin: 0 auto;
+            background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 100%);
+            border: 1px solid var(--border-light);
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 24px 80px rgba(0, 0, 0, 0.4);
+        }
+
+        .code-header {
+            padding: 14px 18px;
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .code-dot { width: 12px; height: 12px; border-radius: 50%; }
+        .code-dot.red { background: #ff5f57; }
+        .code-dot.yellow { background: #febc2e; }
+        .code-dot.green { background: #28c840; }
+
+        .code-title {
+            margin-left: auto;
+            font-size: 12px;
+            color: var(--text-muted);
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .code-content {
+            padding: 28px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 13px;
+            line-height: 1.9;
+            overflow-x: auto;
+        }
+
+        .code-content .comment { color: var(--text-muted); }
+        .code-content .keyword { color: #c084fc; }
+        .code-content .function { color: #60a5fa; }
+        .code-content .string { color: #4ade80; }
+        .code-content .variable { color: var(--text); }
+
+        /* Pricing */
+        .pricing {
+            padding: 100px 0;
+            border-top: 1px solid var(--border);
+        }
+
+        .pricing-cards {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin-top: 50px;
+        }
+
+        .pricing-card {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            padding: 36px;
+            position: relative;
+        }
+
+        .pricing-card.featured {
+            background: linear-gradient(180deg, rgba(139, 92, 246, 0.1) 0%, var(--surface-2) 100%);
+            border-color: rgba(139, 92, 246, 0.3);
+            transform: scale(1.02);
+        }
+
+        .pricing-card.featured::before {
+            content: 'Popular';
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: var(--gradient-1);
+            color: white;
+            font-size: 11px;
+            font-weight: 600;
+            padding: 5px 14px;
+            border-radius: 100px;
+        }
+
+        .pricing-card h4 { font-size: 16px; font-weight: 600; margin-bottom: 6px; }
+        .pricing-card .price { font-size: 44px; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 6px; }
+        .pricing-card .price span { font-size: 14px; font-weight: 500; color: var(--text-secondary); }
+        .pricing-card .description { color: var(--text-secondary); font-size: 13px; margin-bottom: 28px; }
+
+        .pricing-features { list-style: none; margin-bottom: 28px; }
+        .pricing-features li {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 0;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .pricing-features li::before {
+            content: '✓';
+            color: var(--green);
+            font-weight: 600;
+        }
+
+        .pricing-card .btn { width: 100%; }
+
+        .enterprise-note {
+            text-align: center;
+            margin-top: 36px;
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .enterprise-note a { color: var(--accent); text-decoration: none; font-weight: 500; }
+        .enterprise-note a:hover { text-decoration: underline; }
+
+        /* CTA */
+        .cta {
+            padding: 120px 0;
+            text-align: center;
+        }
+
+        .cta-box {
+            background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface) 100%);
+            border: 1px solid var(--border-light);
+            border-radius: 24px;
+            padding: 70px;
+            position: relative;
+        }
+
+        .cta-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: var(--gradient-1);
+            opacity: 0.5;
+        }
+
+        .cta h2 { font-size: 38px; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 14px; }
+        .cta p { color: var(--text-secondary); font-size: 17px; margin-bottom: 36px; }
+
+        /* Footer */
+        footer {
+            padding: 50px 0;
+            border-top: 1px solid var(--border);
+        }
+
+        .footer-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .footer-links { display: flex; gap: 28px; }
+        .footer-links a { color: var(--text-secondary); text-decoration: none; font-size: 13px; }
+        .footer-links a:hover { color: var(--text); }
+        .footer-copy { color: var(--text-muted); font-size: 13px; }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            h1 { font-size: 48px; }
+            .features-grid, .pricing-cards { grid-template-columns: repeat(2, 1fr); }
+            .use-cases-grid { grid-template-columns: 1fr; }
+            .workflow-diagram { gap: 12px; }
+        }
+
+        @media (max-width: 768px) {
+            h1 { font-size: 36px; }
+            .hero { padding: 140px 0 80px; }
+            .features-grid, .pricing-cards { grid-template-columns: 1fr; }
+            .nav-links { display: none; }
+            .section-title { font-size: 32px; }
+            .cta-box { padding: 40px 24px; }
+            .pricing-card.featured { transform: none; }
+            .footer-content { flex-direction: column; gap: 20px; text-align: center; }
+            .workflow-node { min-width: 100px; padding: 14px 16px; }
+            .workflow-arrow::before { width: 24px; }
+            .workflow-steps { gap: 20px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-gradient"></div>
+
+    <nav>
+        <div class="container">
+            <a href="/" class="logo">
+                <div class="logo-icon"></div>
+                Nexus
+            </a>
+            <div class="nav-links">
+                <a href="#workflow">How It Works</a>
+                <a href="#use-cases">Use Cases</a>
+                <a href="#pricing">Pricing</a>
+                <a href="/docs">Docs</a>
+                <a href="playground.html">Playground</a>
+                <a href="#" class="btn btn-primary">Get Started</a>
+            </div>
+        </div>
+    </nav>
+
+    <main>
+        <section class="hero">
+            <div class="container">
+                <div class="badge">
+                    <span class="badge-dot"></span>
+                    Open Source AI Infrastructure
+                </div>
+                <h1>Let Your AIs<br><span>Talk to Each Other</span></h1>
+                <p>Connect Claude to Gemini. Link your terminal agent to cloud services. Build automated AI workflows that just work.</p>
+                <div class="hero-buttons">
+                    <a href="#" class="btn btn-primary">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                        Start Connecting Free
+                    </a>
+                    <a href="#workflow" class="btn btn-secondary">See How It Works</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="workflow-section" id="workflow">
+            <div class="container">
+                <div class="workflow-container">
+                    <div class="workflow-title">Live Workflow Example</div>
+                    <div class="workflow-diagram">
+                        <div class="workflow-node active">
+                            <div class="node-icon claude">C</div>
+                            <span class="node-name">Claude Code</span>
+                            <span class="node-action">"Create hero image"</span>
+                        </div>
+
+                        <div class="workflow-arrow">
+                            <span class="dot"></span>
+                            <span class="workflow-label">discovers</span>
+                        </div>
+
+                        <div class="workflow-node">
+                            <div class="node-icon nexus">N</div>
+                            <span class="node-name">Nexus</span>
+                            <span class="node-action">Routes request</span>
+                        </div>
+
+                        <div class="workflow-arrow">
+                            <span class="dot"></span>
+                            <span class="workflow-label">invokes</span>
+                        </div>
+
+                        <div class="workflow-node">
+                            <div class="node-icon gemini">G</div>
+                            <span class="node-name">Gemini Vision</span>
+                            <span class="node-action">Generates image</span>
+                        </div>
+
+                        <div class="workflow-arrow">
+                            <span class="dot"></span>
+                            <span class="workflow-label">returns</span>
+                        </div>
+
+                        <div class="workflow-node">
+                            <div class="node-icon code">&#10003;</div>
+                            <span class="node-name">Result</span>
+                            <span class="node-action">Image saved</span>
+                        </div>
+                    </div>
+
+                    <div class="workflow-steps">
+                        <div class="workflow-step">
+                            <span class="step-num">1</span>
+                            <span>Agent requests capability</span>
+                        </div>
+                        <div class="workflow-step">
+                            <span class="step-num">2</span>
+                            <span>Nexus finds best match</span>
+                        </div>
+                        <div class="workflow-step">
+                            <span class="step-num">3</span>
+                            <span>Capability is invoked</span>
+                        </div>
+                        <div class="workflow-step">
+                            <span class="step-num">4</span>
+                            <span>Result returned to caller</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="integrations">
+            <div class="container">
+                <p class="integrations-label">Works with your AI stack</p>
+                <div class="integrations-grid">
+                    <div class="integration-item">
+                        <div class="integration-icon" style="background: linear-gradient(135deg, #d97706, #f59e0b);">C</div>
+                        <span class="integration-name">Claude</span>
+                    </div>
+                    <div class="integration-item">
+                        <div class="integration-icon" style="background: linear-gradient(135deg, #10b981, #34d399);">G</div>
+                        <span class="integration-name">GPT</span>
+                    </div>
+                    <div class="integration-item">
+                        <div class="integration-icon" style="background: linear-gradient(135deg, #3b82f6, #8b5cf6);">G</div>
+                        <span class="integration-name">Gemini</span>
+                    </div>
+                    <div class="integration-item">
+                        <div class="integration-icon" style="background: linear-gradient(135deg, #ec4899, #f43f5e);">L</div>
+                        <span class="integration-name">LangChain</span>
+                    </div>
+                    <div class="integration-item">
+                        <div class="integration-icon" style="background: linear-gradient(135deg, #06b6d4, #22d3ee);">A</div>
+                        <span class="integration-name">AutoGPT</span>
+                    </div>
+                    <div class="integration-item">
+                        <div class="integration-icon" style="background: linear-gradient(135deg, #8b5cf6, #a78bfa);">M</div>
+                        <span class="integration-name">MCP</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="use-cases" id="use-cases">
+            <div class="container">
+                <div class="section-header">
+                    <p class="section-eyebrow">Use Cases</p>
+                    <h2 class="section-title">What you can build</h2>
+                    <p class="section-subtitle">Real AI-to-AI workflows that weren't possible before.</p>
+                </div>
+                <div class="use-cases-grid">
+                    <div class="use-case-card">
+                        <div class="use-case-icons">
+                            <div class="use-case-icon" style="background: linear-gradient(135deg, #d97706, #f59e0b);">C</div>
+                            <span class="use-case-arrow">→</span>
+                            <div class="use-case-icon" style="background: linear-gradient(135deg, #3b82f6, #8b5cf6);">G</div>
+                        </div>
+                        <h3>Claude + Gemini Image Generation</h3>
+                        <p>Claude Code generates prompts and automatically routes to Gemini for image generation. No context switching.</p>
+                    </div>
+                    <div class="use-case-card">
+                        <div class="use-case-icons">
+                            <div class="use-case-icon" style="background: linear-gradient(135deg, #6366f1, #8b5cf6);">T</div>
+                            <span class="use-case-arrow">→</span>
+                            <div class="use-case-icon" style="background: linear-gradient(135deg, #06b6d4, #22d3ee);">☁</div>
+                        </div>
+                        <h3>Terminal to Cloud Agents</h3>
+                        <p>Your local AI discovers and calls specialized agents running anywhere - DigitalOcean, AWS, or your own servers.</p>
+                    </div>
+                    <div class="use-case-card">
+                        <div class="use-case-icons">
+                            <div class="use-case-icon" style="background: linear-gradient(135deg, #10b981, #34d399);">G</div>
+                            <span class="use-case-arrow">→</span>
+                            <div class="use-case-icon" style="background: linear-gradient(135deg, #d97706, #f59e0b);">C</div>
+                            <span class="use-case-arrow">→</span>
+                            <div class="use-case-icon" style="background: linear-gradient(135deg, #ec4899, #f43f5e);">R</div>
+                        </div>
+                        <h3>Multi-Model Pipelines</h3>
+                        <p>GPT for planning, Claude for coding, specialized AI for review. Each model does what it's best at.</p>
+                    </div>
+                    <div class="use-case-card">
+                        <div class="use-case-icons">
+                            <div class="use-case-icon" style="background: var(--gradient-1);">M</div>
+                            <span class="use-case-arrow">↔</span>
+                            <div class="use-case-icon" style="background: var(--gradient-1);">M</div>
+                        </div>
+                        <h3>Shared Memory Across AIs</h3>
+                        <p>All your agents share context. Claude remembers what GPT learned. Decisions persist across sessions.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="code-section">
+            <div class="container">
+                <div class="code-preview">
+                    <div class="code-header">
+                        <span class="code-dot red"></span>
+                        <span class="code-dot yellow"></span>
+                        <span class="code-dot green"></span>
+                        <span class="code-title">workflow.py</span>
+                    </div>
+                    <div class="code-content">
+<span class="keyword">from</span> <span class="variable">nexus</span> <span class="keyword">import</span> <span class="function">Nexus</span>
+
+<span class="comment"># Connect your agent</span>
+<span class="variable">agent</span> = <span class="function">Nexus</span>(<span class="string">"my-agent"</span>)
+
+<span class="comment"># Discover agents that can generate images</span>
+<span class="variable">results</span> = <span class="variable">agent</span>.<span class="function">discover</span>(<span class="keyword">query</span>=<span class="string">"generate images"</span>)
+<span class="variable">image_agent</span> = <span class="variable">results</span>[<span class="string">0</span>]
+
+<span class="comment"># Invoke their capability</span>
+<span class="variable">result</span> = <span class="variable">agent</span>.<span class="function">invoke</span>(
+    <span class="variable">image_agent</span>[<span class="string">"agent_id"</span>],
+    <span class="string">"generate-image"</span>,
+    {<span class="string">"prompt"</span>: <span class="string">"futuristic city"</span>}
+)
+
+<span class="comment"># Get the result</span>
+<span class="keyword">print</span>(<span class="variable">result</span>[<span class="string">"output_data"</span>][<span class="string">"image_url"</span>])
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="features" id="features">
+            <div class="container">
+                <div class="section-header">
+                    <p class="section-eyebrow">Features</p>
+                    <h2 class="section-title">Built for AI-to-AI</h2>
+                    <p class="section-subtitle">Everything your agents need to connect.</p>
+                </div>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">🔍</div>
+                        <h3>Agent Discovery</h3>
+                        <p>Semantic search for capabilities. Find the right agent for any task.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🧠</div>
+                        <h3>Shared Memory</h3>
+                        <p>Persistent context any agent can read or write.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">⚡</div>
+                        <h3>Capability Invocation</h3>
+                        <p>Call other agents' capabilities with a single line of code.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">💬</div>
+                        <h3>Agent Messaging</h3>
+                        <p>Direct communication between agents.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🔐</div>
+                        <h3>Identity & Auth</h3>
+                        <p>Secure agent-to-agent authentication.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🌐</div>
+                        <h3>Location Agnostic</h3>
+                        <p>Terminal, cloud, edge - connect anywhere.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="pricing" id="pricing">
+            <div class="container">
+                <div class="section-header">
+                    <p class="section-eyebrow">Pricing</p>
+                    <h2 class="section-title">Start free, scale as you grow</h2>
+                    <p class="section-subtitle">Simple pricing for any size project.</p>
+                </div>
+                <div class="pricing-cards">
+                    <div class="pricing-card">
+                        <h4>Free</h4>
+                        <div class="price">$0<span>/mo</span></div>
+                        <p class="description">For experimenting</p>
+                        <ul class="pricing-features">
+                            <li>3 connected agents</li>
+                            <li>10K operations/month</li>
+                            <li>Basic discovery</li>
+                            <li>Community support</li>
+                        </ul>
+                        <a href="#" class="btn btn-secondary">Get Started</a>
+                    </div>
+                    <div class="pricing-card featured">
+                        <h4>Starter</h4>
+                        <div class="price">$29<span>/mo</span></div>
+                        <p class="description">For builders</p>
+                        <ul class="pricing-features">
+                            <li>10 connected agents</li>
+                            <li>100K operations/month</li>
+                            <li>Semantic discovery</li>
+                            <li>Shared memory</li>
+                            <li>Email support</li>
+                        </ul>
+                        <a href="#" class="btn btn-primary">Start Free Trial</a>
+                    </div>
+                    <div class="pricing-card">
+                        <h4>Pro</h4>
+                        <div class="price">$99<span>/mo</span></div>
+                        <p class="description">For teams</p>
+                        <ul class="pricing-features">
+                            <li>50 connected agents</li>
+                            <li>1M operations/month</li>
+                            <li>Advanced workflows</li>
+                            <li>Priority support</li>
+                            <li>99.9% SLA</li>
+                        </ul>
+                        <a href="#" class="btn btn-secondary">Start Free Trial</a>
+                    </div>
+                </div>
+                <p class="enterprise-note">Need more? <a href="mailto:hello@nexus.dev">Let's talk</a></p>
+            </div>
+        </section>
+
+        <section class="cta">
+            <div class="container">
+                <div class="cta-box">
+                    <h2>Your AIs are ready to connect</h2>
+                    <p>Start building AI workflows in minutes. Free forever for small projects.</p>
+                    <div class="hero-buttons">
+                        <a href="#" class="btn btn-primary">Start Building Free</a>
+                        <a href="/docs" class="btn btn-secondary">Read the Docs</a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-links">
+                    <a href="/docs">Documentation</a>
+                    <a href="https://github.com/nexus">GitHub</a>
+                    <a href="#pricing">Pricing</a>
+                </div>
+                <p class="footer-copy">Open source. MIT License.</p>
+            </div>
+        </div>
+    </footer>
+</body>
+</html>

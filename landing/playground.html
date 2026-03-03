@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Playground - Test Your Agent Integrations</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0a0a0f;
+            --bg-secondary: #111118;
+            --bg-tertiary: #1a1a24;
+            --accent: #6366f1;
+            --accent-light: #818cf8;
+            --text-primary: #ffffff;
+            --text-secondary: #94a3b8;
+            --border: #2a2a3a;
+            --success: #22c55e;
+            --error: #ef4444;
+            --warning: #f59e0b;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-size: 1.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), var(--accent-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+        }
+
+        .api-key-input {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            color: var(--text-primary);
+            font-family: monospace;
+            width: 300px;
+        }
+
+        .api-key-input:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            border: none;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-light);
+        }
+
+        .btn-secondary {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+        }
+
+        .main {
+            display: grid;
+            grid-template-columns: 280px 1fr 350px;
+            height: calc(100vh - 60px);
+        }
+
+        .sidebar {
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border);
+            padding: 1.5rem;
+            overflow-y: auto;
+        }
+
+        .sidebar h3 {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            margin-bottom: 1rem;
+            letter-spacing: 0.05em;
+        }
+
+        .endpoint-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .endpoint-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .endpoint-item:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .endpoint-item.active {
+            background: var(--accent);
+        }
+
+        .method-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            min-width: 45px;
+            text-align: center;
+        }
+
+        .method-get { background: #22c55e; color: #052e16; }
+        .method-post { background: #3b82f6; color: #1e3a5f; }
+        .method-patch { background: #f59e0b; color: #451a03; }
+        .method-delete { background: #ef4444; color: #450a0a; }
+
+        .endpoint-name {
+            font-size: 0.875rem;
+        }
+
+        .content {
+            padding: 2rem;
+            overflow-y: auto;
+        }
+
+        .request-section {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .section-header {
+            background: var(--bg-tertiary);
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .section-header h2 {
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .section-body {
+            padding: 1.5rem;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .input-group label {
+            display: block;
+            font-size: 0.875rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+        }
+
+        .input-field {
+            width: 100%;
+            background: var(--bg-primary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            color: var(--text-primary);
+            font-size: 0.875rem;
+        }
+
+        .input-field:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+
+        textarea.input-field {
+            min-height: 150px;
+            font-family: 'JetBrains Mono', monospace;
+            resize: vertical;
+        }
+
+        .response-panel {
+            background: var(--bg-secondary);
+            border-left: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+        }
+
+        .response-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .response-header h3 {
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .status-badge {
+            font-size: 0.75rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 100px;
+            font-weight: 500;
+        }
+
+        .status-success { background: rgba(34, 197, 94, 0.2); color: #22c55e; }
+        .status-error { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .status-pending { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+
+        .response-body {
+            flex: 1;
+            padding: 1rem;
+            overflow-y: auto;
+        }
+
+        .response-body pre {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .response-meta {
+            padding: 0.75rem 1rem;
+            border-top: 1px solid var(--border);
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            padding: 4px;
+        }
+
+        .tab {
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            color: var(--text-secondary);
+        }
+
+        .tab.active {
+            background: var(--accent);
+            color: white;
+        }
+
+        .endpoint-group {
+            margin-bottom: 2rem;
+        }
+
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            color: var(--text-secondary);
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--border);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 0.75rem;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--text-secondary);
+        }
+
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 1rem;
+            opacity: 0.5;
+        }
+    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="header">
+        <a href="index.html" class="logo">Nexus Playground</a>
+        <div class="header-actions">
+            <input type="text" class="api-key-input" id="apiKey" placeholder="Enter your API key (nex_...)">
+            <button class="btn btn-primary" onclick="connect()">Connect</button>
+            <span id="connectionStatus"></span>
+        </div>
+    </header>
+
+    <main class="main">
+        <aside class="sidebar">
+            <div class="endpoint-group">
+                <h3>Identity</h3>
+                <div class="endpoint-list">
+                    <div class="endpoint-item" onclick="selectEndpoint('register')">
+                        <span class="method-badge method-post">POST</span>
+                        <span class="endpoint-name">/agents</span>
+                    </div>
+                    <div class="endpoint-item" onclick="selectEndpoint('whoami')">
+                        <span class="method-badge method-get">GET</span>
+                        <span class="endpoint-name">/agents/me</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>Discovery</h3>
+                <div class="endpoint-list">
+                    <div class="endpoint-item" onclick="selectEndpoint('search')">
+                        <span class="method-badge method-get">GET</span>
+                        <span class="endpoint-name">/discover/search</span>
+                    </div>
+                    <div class="endpoint-item" onclick="selectEndpoint('registerCapability')">
+                        <span class="method-badge method-post">POST</span>
+                        <span class="endpoint-name">/discover/capabilities</span>
+                    </div>
+                    <div class="endpoint-item" onclick="selectEndpoint('myCapabilities')">
+                        <span class="method-badge method-get">GET</span>
+                        <span class="endpoint-name">/discover/capabilities/me</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>Invocations</h3>
+                <div class="endpoint-list">
+                    <div class="endpoint-item" onclick="selectEndpoint('invoke')">
+                        <span class="method-badge method-post">POST</span>
+                        <span class="endpoint-name">/invocations</span>
+                    </div>
+                    <div class="endpoint-item" onclick="selectEndpoint('pending')">
+                        <span class="method-badge method-get">GET</span>
+                        <span class="endpoint-name">/invocations/pending</span>
+                    </div>
+                    <div class="endpoint-item" onclick="selectEndpoint('complete')">
+                        <span class="method-badge method-post">POST</span>
+                        <span class="endpoint-name">/invocations/:id/complete</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>Messaging</h3>
+                <div class="endpoint-list">
+                    <div class="endpoint-item" onclick="selectEndpoint('sendMessage')">
+                        <span class="method-badge method-post">POST</span>
+                        <span class="endpoint-name">/messages</span>
+                    </div>
+                    <div class="endpoint-item" onclick="selectEndpoint('inbox')">
+                        <span class="method-badge method-get">GET</span>
+                        <span class="endpoint-name">/messages/inbox</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>Health</h3>
+                <div class="endpoint-list">
+                    <div class="endpoint-item" onclick="selectEndpoint('heartbeat')">
+                        <span class="method-badge method-post">POST</span>
+                        <span class="endpoint-name">/health/heartbeat</span>
+                    </div>
+                    <div class="endpoint-item" onclick="selectEndpoint('healthStatus')">
+                        <span class="method-badge method-get">GET</span>
+                        <span class="endpoint-name">/health/me</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="endpoint-group">
+                <h3>Analytics</h3>
+                <div class="endpoint-list">
+                    <div class="endpoint-item" onclick="selectEndpoint('myStats')">
+                        <span class="method-badge method-get">GET</span>
+                        <span class="endpoint-name">/analytics/me</span>
+                    </div>
+                    <div class="endpoint-item" onclick="selectEndpoint('popular')">
+                        <span class="method-badge method-get">GET</span>
+                        <span class="endpoint-name">/analytics/capabilities/popular</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <section class="content" id="requestContent">
+            <div class="empty-state">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                <h3>Select an endpoint to get started</h3>
+                <p>Choose an API endpoint from the sidebar to test your integration</p>
+            </div>
+        </section>
+
+        <aside class="response-panel">
+            <div class="response-header">
+                <h3>Response</h3>
+                <span class="status-badge status-pending" id="statusBadge">Ready</span>
+            </div>
+            <div class="response-body" id="responseBody">
+                <pre id="responseContent">// Response will appear here</pre>
+            </div>
+            <div class="response-meta" id="responseMeta">
+                <span id="responseTime">Time: -</span>
+                <span id="responseSize">Size: -</span>
+            </div>
+        </aside>
+    </main>
+
+    <script>
+        const API_URL = window.location.hostname === 'localhost'
+            ? 'http://localhost:8000'
+            : 'https://api.nexus.ai';
+
+        let apiKey = localStorage.getItem('nexus_api_key') || '';
+        document.getElementById('apiKey').value = apiKey;
+
+        const endpoints = {
+            register: {
+                method: 'POST',
+                path: '/agents',
+                body: { name: 'My Agent', slug: 'my-agent', description: 'A test agent' },
+                noAuth: true
+            },
+            whoami: {
+                method: 'GET',
+                path: '/agents/me'
+            },
+            search: {
+                method: 'GET',
+                path: '/discover/search',
+                params: { query: '', limit: 20 }
+            },
+            registerCapability: {
+                method: 'POST',
+                path: '/discover/capabilities',
+                body: { name: 'my-capability', description: 'A test capability', tags: ['test'] }
+            },
+            myCapabilities: {
+                method: 'GET',
+                path: '/discover/capabilities/me'
+            },
+            invoke: {
+                method: 'POST',
+                path: '/invocations',
+                body: { target_agent_id: '', capability: '', input: {}, timeout_seconds: 30 }
+            },
+            pending: {
+                method: 'GET',
+                path: '/invocations/pending'
+            },
+            complete: {
+                method: 'POST',
+                path: '/invocations/{id}/complete',
+                body: { output: {} },
+                pathParams: ['id']
+            },
+            sendMessage: {
+                method: 'POST',
+                path: '/messages',
+                body: { to_agent_id: '', content: 'Hello!', subject: 'Test' }
+            },
+            inbox: {
+                method: 'GET',
+                path: '/messages/inbox',
+                params: { unread_only: false, limit: 50 }
+            },
+            heartbeat: {
+                method: 'POST',
+                path: '/health/heartbeat'
+            },
+            healthStatus: {
+                method: 'GET',
+                path: '/health/me'
+            },
+            myStats: {
+                method: 'GET',
+                path: '/analytics/me'
+            },
+            popular: {
+                method: 'GET',
+                path: '/analytics/capabilities/popular',
+                params: { limit: 10 }
+            }
+        };
+
+        let currentEndpoint = null;
+
+        function connect() {
+            apiKey = document.getElementById('apiKey').value;
+            localStorage.setItem('nexus_api_key', apiKey);
+
+            const status = document.getElementById('connectionStatus');
+            if (apiKey) {
+                status.innerHTML = '<span style="color: #22c55e;">Connected</span>';
+            } else {
+                status.innerHTML = '<span style="color: #f59e0b;">No API key</span>';
+            }
+        }
+
+        function selectEndpoint(name) {
+            currentEndpoint = name;
+            const endpoint = endpoints[name];
+
+            // Update active state
+            document.querySelectorAll('.endpoint-item').forEach(el => el.classList.remove('active'));
+            event.target.closest('.endpoint-item').classList.add('active');
+
+            let html = `
+                <div class="request-section">
+                    <div class="section-header">
+                        <h2><span class="method-badge method-${endpoint.method.toLowerCase()}">${endpoint.method}</span> ${endpoint.path}</h2>
+                        <button class="btn btn-primary" onclick="sendRequest()">Send Request</button>
+                    </div>
+                    <div class="section-body">
+            `;
+
+            if (endpoint.pathParams) {
+                endpoint.pathParams.forEach(param => {
+                    html += `
+                        <div class="input-group">
+                            <label>Path Parameter: ${param}</label>
+                            <input type="text" class="input-field" id="path_${param}" placeholder="Enter ${param}">
+                        </div>
+                    `;
+                });
+            }
+
+            if (endpoint.params) {
+                html += '<h4 style="margin-bottom: 1rem; color: var(--text-secondary);">Query Parameters</h4>';
+                Object.entries(endpoint.params).forEach(([key, value]) => {
+                    html += `
+                        <div class="input-group">
+                            <label>${key}</label>
+                            <input type="text" class="input-field" id="param_${key}" value="${value}">
+                        </div>
+                    `;
+                });
+            }
+
+            if (endpoint.body) {
+                html += `
+                    <div class="input-group">
+                        <label>Request Body (JSON)</label>
+                        <textarea class="input-field" id="requestBody">${JSON.stringify(endpoint.body, null, 2)}</textarea>
+                    </div>
+                `;
+            }
+
+            html += '</div></div>';
+            document.getElementById('requestContent').innerHTML = html;
+        }
+
+        async function sendRequest() {
+            if (!currentEndpoint) return;
+
+            const endpoint = endpoints[currentEndpoint];
+            const statusBadge = document.getElementById('statusBadge');
+            const responseContent = document.getElementById('responseContent');
+            const responseTime = document.getElementById('responseTime');
+            const responseSize = document.getElementById('responseSize');
+
+            statusBadge.textContent = 'Loading...';
+            statusBadge.className = 'status-badge status-pending';
+
+            let path = endpoint.path;
+
+            // Handle path params
+            if (endpoint.pathParams) {
+                endpoint.pathParams.forEach(param => {
+                    const value = document.getElementById(`path_${param}`).value;
+                    path = path.replace(`{${param}}`, value);
+                });
+            }
+
+            // Handle query params
+            if (endpoint.params) {
+                const params = new URLSearchParams();
+                Object.keys(endpoint.params).forEach(key => {
+                    const el = document.getElementById(`param_${key}`);
+                    if (el && el.value) {
+                        params.append(key, el.value);
+                    }
+                });
+                if (params.toString()) {
+                    path += '?' + params.toString();
+                }
+            }
+
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            if (!endpoint.noAuth && apiKey) {
+                headers['Authorization'] = `Bearer ${apiKey}`;
+            }
+
+            const options = {
+                method: endpoint.method,
+                headers
+            };
+
+            if (endpoint.body) {
+                const bodyEl = document.getElementById('requestBody');
+                if (bodyEl) {
+                    try {
+                        options.body = bodyEl.value;
+                    } catch (e) {
+                        responseContent.textContent = 'Invalid JSON in request body';
+                        statusBadge.textContent = 'Error';
+                        statusBadge.className = 'status-badge status-error';
+                        return;
+                    }
+                }
+            }
+
+            const startTime = performance.now();
+
+            try {
+                const response = await fetch(API_URL + path, options);
+                const endTime = performance.now();
+                const data = await response.json();
+
+                responseContent.textContent = JSON.stringify(data, null, 2);
+                responseTime.textContent = `Time: ${Math.round(endTime - startTime)}ms`;
+                responseSize.textContent = `Size: ${JSON.stringify(data).length} bytes`;
+
+                if (response.ok) {
+                    statusBadge.textContent = `${response.status} OK`;
+                    statusBadge.className = 'status-badge status-success';
+
+                    // Auto-save API key if registering
+                    if (currentEndpoint === 'register' && data.api_key) {
+                        document.getElementById('apiKey').value = data.api_key;
+                        apiKey = data.api_key;
+                        localStorage.setItem('nexus_api_key', apiKey);
+                        connect();
+                    }
+                } else {
+                    statusBadge.textContent = `${response.status} Error`;
+                    statusBadge.className = 'status-badge status-error';
+                }
+            } catch (error) {
+                responseContent.textContent = `Error: ${error.message}`;
+                statusBadge.textContent = 'Failed';
+                statusBadge.className = 'status-badge status-error';
+                responseTime.textContent = 'Time: -';
+                responseSize.textContent = 'Size: -';
+            }
+        }
+
+        // Check connection on load
+        if (apiKey) {
+            connect();
+        }
+    </script>
+</body>
+</html>

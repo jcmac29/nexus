@@ -1,0 +1,55 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: nexus-db
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: nexus
+      POSTGRES_DB: nexus
+    ports:
+      - "5432:5432"
+    volumes:
+      - nexus_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: nexus-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - nexus_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    container_name: nexus-api
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nexus:nexus@db:5432/nexus
+      REDIS_URL: redis://redis:6379/0
+      DEBUG: "true"
+      SECRET_KEY: change-me-in-production
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./core:/app
+    command: uvicorn nexus.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  nexus_postgres_data:
+  nexus_redis_data:
