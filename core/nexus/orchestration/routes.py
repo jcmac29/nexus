@@ -86,7 +86,7 @@ async def list_workflows(
 ):
     """List workflows."""
     from sqlalchemy import select
-    from nexus.orchestration.models import Workflow
+    from nexus.orchestration.models import OrchestrationWorkflow as Workflow
 
     query = select(Workflow)
     if owner_only:

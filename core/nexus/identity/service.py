@@ -53,6 +53,40 @@ class IdentityService:
 
         return agent, api_key_string
 
+    async def register_agent(
+        self,
+        name: str,
+        version: str = "1.0.0",
+        description: str | None = None,
+        capabilities: list[str] | None = None,
+        metadata: dict | None = None,
+    ) -> Agent:
+        """
+        Register a new agent (convenience method).
+
+        This is an alias for create_agent that returns just the agent
+        with the api_key attached as an attribute for backward compatibility.
+        """
+        import re
+        import uuid
+        # Generate unique slug from name
+        base_slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+        slug = f"{base_slug}-{uuid.uuid4().hex[:8]}"
+
+        agent, api_key_string = await self.create_agent(
+            name=name,
+            slug=slug,
+            description=description,
+            metadata={
+                **(metadata or {}),
+                "version": version,
+                "capabilities": capabilities or [],
+            },
+        )
+        # Attach api_key for backward compatibility
+        agent.api_key = api_key_string
+        return agent
+
     async def get_agent_by_id(self, agent_id: UUID) -> Agent | None:
         """Get an agent by ID."""
         result = await self.db.execute(

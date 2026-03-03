@@ -43,7 +43,7 @@ class StepType(str, enum.Enum):
     TRANSFORM = "transform"        # Transform data
 
 
-class Workflow(Base):
+class OrchestrationWorkflow(Base):
     """A workflow definition for orchestrating agents."""
 
     __tablename__ = "orchestration_workflows"
@@ -73,12 +73,12 @@ class Workflow(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    steps = relationship("WorkflowStep", back_populates="workflow", cascade="all, delete-orphan", order_by="WorkflowStep.order")
-    executions = relationship("WorkflowExecution", back_populates="workflow", cascade="all, delete-orphan")
+    steps = relationship("OrchestrationStep", back_populates="workflow", cascade="all, delete-orphan", order_by="OrchestrationStep.order")
+    executions = relationship("OrchestrationExecution", back_populates="workflow", cascade="all, delete-orphan")
 
 
-class WorkflowStep(Base):
-    """A step in a workflow."""
+class OrchestrationStep(Base):
+    """A step in an orchestration workflow."""
 
     __tablename__ = "orchestration_steps"
 
@@ -115,10 +115,10 @@ class WorkflowStep(Base):
     # Timeout
     timeout = Column(Integer, nullable=True)
 
-    workflow = relationship("Workflow", back_populates="steps")
+    workflow = relationship("OrchestrationWorkflow", back_populates="steps")
 
 
-class WorkflowExecution(Base):
+class OrchestrationExecution(Base):
     """An execution instance of a workflow."""
 
     __tablename__ = "orchestration_executions"
@@ -157,11 +157,11 @@ class WorkflowExecution(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    workflow = relationship("Workflow", back_populates="executions")
-    step_executions = relationship("StepExecution", back_populates="workflow_execution", cascade="all, delete-orphan")
+    workflow = relationship("OrchestrationWorkflow", back_populates="executions")
+    step_executions = relationship("OrchestrationStepExecution", back_populates="workflow_execution", cascade="all, delete-orphan")
 
 
-class StepExecution(Base):
+class OrchestrationStepExecution(Base):
     """Execution record for a single step."""
 
     __tablename__ = "orchestration_step_executions"
@@ -181,4 +181,4 @@ class StepExecution(Base):
     completed_at = Column(DateTime, nullable=True)
     duration_ms = Column(Float, nullable=True)
 
-    workflow_execution = relationship("WorkflowExecution", back_populates="step_executions")
+    workflow_execution = relationship("OrchestrationExecution", back_populates="step_executions")

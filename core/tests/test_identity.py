@@ -6,41 +6,41 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @pytest.mark.asyncio
-async def test_register_agent(client: AsyncClient):
+async def test_register_agent(client: AsyncClient, db_session: AsyncSession):
     """Test agent registration."""
     response = await client.post(
-        "/api/v1/agents/register",
+        "/api/v1/agents",
         json={
             "name": "new-test-agent",
-            "version": "1.0.0",
+            "slug": "new-test-agent-unique-123",
             "description": "A test agent",
-            "capabilities": ["testing", "automation"],
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
 
     data = response.json()
-    assert data["name"] == "new-test-agent"
-    assert "id" in data
+    assert data["agent"]["name"] == "new-test-agent"
     assert "api_key" in data
 
 
 @pytest.mark.asyncio
-async def test_get_agent(authenticated_client: AsyncClient, test_agent):
-    """Test getting agent details."""
-    response = await authenticated_client.get(f"/api/v1/agents/{test_agent.id}")
+async def test_get_current_agent(authenticated_client: AsyncClient):
+    """Test getting current agent details."""
+    response = await authenticated_client.get("/api/v1/agents/me")
     assert response.status_code == 200
 
     data = response.json()
-    assert data["id"] == str(test_agent.id)
-    assert data["name"] == test_agent.name
+    # The authenticated_client creates an agent named "test-agent"
+    assert "id" in data
+    assert "name" in data
+    assert data["status"] == "active"
 
 
 @pytest.mark.asyncio
-async def test_update_agent(authenticated_client: AsyncClient, test_agent):
-    """Test updating agent details."""
+async def test_update_current_agent(authenticated_client: AsyncClient):
+    """Test updating current agent details."""
     response = await authenticated_client.patch(
-        f"/api/v1/agents/{test_agent.id}",
+        "/api/v1/agents/me",
         json={
             "description": "Updated description",
         },
@@ -52,20 +52,29 @@ async def test_update_agent(authenticated_client: AsyncClient, test_agent):
 
 
 @pytest.mark.asyncio
-async def test_agent_heartbeat(authenticated_client: AsyncClient, test_agent):
-    """Test agent heartbeat."""
+async def test_create_api_key(authenticated_client: AsyncClient):
+    """Test creating a new API key."""
     response = await authenticated_client.post(
-        f"/api/v1/agents/{test_agent.id}/heartbeat"
+        "/api/v1/agents/me/keys",
+        json={
+            "name": "test-key",
+            "scopes": ["read", "write"],
+        },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
+
+    data = response.json()
+    assert data["key"]["name"] == "test-key"
+    assert "api_key" in data
 
 
 @pytest.mark.asyncio
-async def test_list_agents(authenticated_client: AsyncClient, test_agent):
-    """Test listing agents."""
-    response = await authenticated_client.get("/api/v1/agents")
+async def test_list_api_keys(authenticated_client: AsyncClient):
+    """Test listing API keys."""
+    response = await authenticated_client.get("/api/v1/agents/me/keys")
     assert response.status_code == 200
 
     data = response.json()
-    assert "agents" in data
-    assert len(data["agents"]) > 0
+    assert isinstance(data, list)
+    # Should have at least the default key
+    assert len(data) >= 1

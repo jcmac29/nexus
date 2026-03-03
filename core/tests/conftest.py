@@ -12,7 +12,7 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.pool import NullPool
 
-from nexus.database import Base, get_async_session
+from nexus.database import Base, get_db
 from nexus.config import get_settings
 from nexus.main import app
 
@@ -42,6 +42,8 @@ async def engine():
     )
 
     async with engine.begin() as conn:
+        # Enable pgvector extension
+        await conn.execute(__import__('sqlalchemy').text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
 
     yield engine
@@ -73,7 +75,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     async def override_get_session():
         yield db_session
 
-    app.dependency_overrides[get_async_session] = override_get_session
+    app.dependency_overrides[get_db] = override_get_session
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

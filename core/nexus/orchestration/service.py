@@ -14,10 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from nexus.orchestration.models import (
-    Workflow,
-    WorkflowStep,
-    WorkflowExecution,
-    StepExecution,
+    OrchestrationWorkflow as Workflow,
+    OrchestrationStep as WorkflowStep,
+    OrchestrationExecution as WorkflowExecution,
+    OrchestrationStepExecution as StepExecution,
     WorkflowStatus,
     ExecutionStatus,
     StepType,

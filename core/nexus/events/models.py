@@ -75,7 +75,7 @@ class Event(Base):
 
     # Event data
     payload = Column(JSON, default=dict)
-    metadata = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, default=dict)
 
     # Targeting (optional - for directed events)
     target_id = Column(UUID(as_uuid=True), nullable=True)

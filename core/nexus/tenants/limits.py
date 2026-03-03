@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.billing.models import Account
-from nexus.billing.plans import PLAN_LIMITS, PlanType
+from nexus.billing.plans import PLANS, PlanType, get_plan_limits
 from nexus.identity.models import Agent
 from nexus.memory.models import Memory
 
@@ -34,9 +34,20 @@ class LimitsService:
         account = result.scalar_one_or_none()
 
         if not account:
-            return PLAN_LIMITS.get(PlanType.FREE, {})
+            limits = get_plan_limits(PlanType.FREE)
+            return {
+                "agents": limits.agents,
+                "stored_memories": limits.stored_memories,
+                "team_members": limits.team_members,
+            }
 
-        plan_limits = PLAN_LIMITS.get(account.plan_type, PLAN_LIMITS.get(PlanType.FREE, {}))
+        plan_type = account.plan_type if hasattr(account, 'plan_type') else PlanType.FREE
+        limits = get_plan_limits(plan_type)
+        plan_limits = {
+            "agents": limits.agents,
+            "stored_memories": limits.stored_memories,
+            "team_members": limits.team_members,
+        }
 
         # Check for custom overrides in tenant settings
         from nexus.tenants.models import TenantSettings
