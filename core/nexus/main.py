@@ -23,6 +23,8 @@ from nexus.health import routes as health_routes
 from nexus.marketplace import routes as marketplace_routes
 from nexus.teams import routes as teams_routes
 from nexus.media import routes as media_routes
+from nexus.federation import routes as federation_routes
+from nexus.public import routes as public_routes
 
 settings = get_settings()
 
@@ -158,6 +160,18 @@ app.include_router(
 # Media storage routes
 app.include_router(
     media_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Federation routes (connect Nexus instances)
+app.include_router(
+    federation_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Public marketplace routes (safe public capability sharing)
+app.include_router(
+    public_routes.router,
     prefix=settings.api_prefix,
 )
 
