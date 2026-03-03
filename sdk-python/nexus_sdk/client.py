@@ -9,6 +9,10 @@ import httpx
 from nexus_sdk.memory import Memory, MemoryAsync
 from nexus_sdk.discovery import Discovery, DiscoveryAsync
 from nexus_sdk.messaging import MessagingClient, InvocationClient, WebhookClient
+from nexus_sdk.graph import Graph, GraphAsync
+from nexus_sdk.webhooks import Webhooks, WebhooksAsync
+from nexus_sdk.analytics import Analytics, AnalyticsAsync
+from nexus_sdk.tenants import Tenants, TenantsAsync
 
 
 class HTTPClient:
@@ -79,6 +83,10 @@ class Nexus:
         self._messages = MessagingClient(self._http)
         self._invocations = InvocationClient(self._http)
         self._webhook = WebhookClient(self._http)
+        self._graph = Graph(self._client)
+        self._webhooks = Webhooks(self._client)
+        self._analytics = Analytics(self._client)
+        self._tenants = Tenants(self._client)
 
     @classmethod
     def register(
@@ -141,6 +149,26 @@ class Nexus:
     def webhook(self) -> WebhookClient:
         """Access webhook configuration."""
         return self._webhook
+
+    @property
+    def graph(self) -> Graph:
+        """Access graph memory operations."""
+        return self._graph
+
+    @property
+    def webhooks(self) -> Webhooks:
+        """Access webhook management."""
+        return self._webhooks
+
+    @property
+    def analytics(self) -> Analytics:
+        """Access analytics and usage metrics."""
+        return self._analytics
+
+    @property
+    def tenants(self) -> Tenants:
+        """Access multi-tenant management."""
+        return self._tenants
 
     def discover(
         self,
@@ -446,6 +474,10 @@ class NexusAsync:
         self._messages = MessagingClientAsync(self._http)
         self._invocations = InvocationClientAsync(self._http)
         self._webhook = WebhookClientAsync(self._http)
+        self._graph = GraphAsync(self._client)
+        self._webhooks = WebhooksAsync(self._client)
+        self._analytics = AnalyticsAsync(self._client)
+        self._tenants = TenantsAsync(self._client)
 
     @classmethod
     async def register(
@@ -496,6 +528,26 @@ class NexusAsync:
     def webhook(self) -> WebhookClientAsync:
         """Access webhook configuration."""
         return self._webhook
+
+    @property
+    def graph(self) -> GraphAsync:
+        """Access graph memory operations."""
+        return self._graph
+
+    @property
+    def webhooks(self) -> WebhooksAsync:
+        """Access webhook management."""
+        return self._webhooks
+
+    @property
+    def analytics(self) -> AnalyticsAsync:
+        """Access analytics and usage metrics."""
+        return self._analytics
+
+    @property
+    def tenants(self) -> TenantsAsync:
+        """Access multi-tenant management."""
+        return self._tenants
 
     async def discover(
         self,

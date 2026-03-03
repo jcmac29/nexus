@@ -51,6 +51,8 @@ from nexus.documents import models as document_models  # noqa: F401
 from nexus.devices import models as device_models  # noqa: F401
 from nexus.jobs import models as job_models  # noqa: F401
 from nexus.search import models as search_models  # noqa: F401
+from nexus.graph import models as graph_models  # noqa: F401
+from nexus.tenants import models as tenant_models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

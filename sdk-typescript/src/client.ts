@@ -12,6 +12,10 @@ import {
   Invocation,
   PendingWork,
 } from './messaging';
+import { Graph } from './graph';
+import { Webhooks } from './webhooks';
+import { Analytics } from './analytics';
+import { Tenants } from './tenants';
 import { Agent, AgentCreateResponse, DiscoverResult } from './types';
 
 export interface NexusConfig {
@@ -91,6 +95,10 @@ export class Nexus {
   private _messages: MessagingClient;
   private _invocations: InvocationClient;
   private _webhook: WebhookClient;
+  private _graph: Graph;
+  private _webhooks: Webhooks;
+  private _analytics: Analytics;
+  private _tenants: Tenants;
 
   constructor(config: NexusConfig) {
     const baseUrl = config.baseUrl || 'http://localhost:8000/api/v1';
@@ -110,6 +118,10 @@ export class Nexus {
     this._messages = new MessagingClient(this.client);
     this._invocations = new InvocationClient(this.client);
     this._webhook = new WebhookClient(this.client);
+    this._graph = new Graph(this.axiosClient);
+    this._webhooks = new Webhooks(this.axiosClient);
+    this._analytics = new Analytics(this.axiosClient);
+    this._tenants = new Tenants(this.axiosClient);
   }
 
   /**
@@ -167,6 +179,34 @@ export class Nexus {
    */
   get webhook(): WebhookClient {
     return this._webhook;
+  }
+
+  /**
+   * Access graph memory operations.
+   */
+  get graph(): Graph {
+    return this._graph;
+  }
+
+  /**
+   * Access webhook management.
+   */
+  get webhooks(): Webhooks {
+    return this._webhooks;
+  }
+
+  /**
+   * Access analytics and usage metrics.
+   */
+  get analytics(): Analytics {
+    return this._analytics;
+  }
+
+  /**
+   * Access multi-tenant management.
+   */
+  get tenants(): Tenants {
+    return this._tenants;
   }
 
   /**

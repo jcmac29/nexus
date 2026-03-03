@@ -107,3 +107,120 @@ async def generate_embeddings(content: str, model: str = "text-embedding-3-small
     print(f"Generating embeddings with {model}")
     # This would call OpenAI or another embedding service
     return {"dimensions": 1536}
+
+
+# --- Analytics Aggregation Tasks ---
+
+
+@task(name="nexus.aggregate_hourly_metrics", queue="analytics", max_retries=3)
+async def aggregate_hourly_metrics():
+    """
+    Aggregate metrics from Redis to PostgreSQL hourly tables.
+
+    Runs every hour to roll up real-time counters.
+    """
+    from nexus.database import get_async_session
+    from nexus.analytics.collector import MetricsCollector
+
+    async for session in get_async_session():
+        collector = MetricsCollector(session)
+        result = await collector.flush_to_database()
+        return result
+
+
+@task(name="nexus.aggregate_daily_metrics", queue="analytics", max_retries=3)
+async def aggregate_daily_metrics():
+    """
+    Aggregate hourly metrics into daily summaries.
+
+    Runs daily to compute daily aggregates and percentiles.
+    """
+    from nexus.database import get_async_session
+    from nexus.analytics.tasks import roll_up_daily_metrics
+
+    async for session in get_async_session():
+        result = await roll_up_daily_metrics(session)
+        return result
+
+
+@task(name="nexus.calculate_storage_usage", queue="analytics", max_retries=2)
+async def calculate_storage_usage():
+    """
+    Calculate storage usage for all agents.
+
+    Runs daily to update storage_usage table.
+    """
+    from nexus.database import get_async_session
+    from nexus.analytics.tasks import calculate_storage_snapshots
+
+    async for session in get_async_session():
+        result = await calculate_storage_snapshots(session)
+        return result
+
+
+@task(name="nexus.retry_failed_webhooks", queue="webhooks", max_retries=1)
+async def retry_failed_webhooks():
+    """
+    Retry webhooks that are due for retry.
+
+    Runs every minute to process webhook retry queue.
+    """
+    from nexus.database import get_async_session
+    from nexus.webhooks.service import WebhookService
+
+    async for session in get_async_session():
+        service = WebhookService(session)
+        result = await service.process_retry_queue()
+        return result
+
+
+@task(name="nexus.cleanup_old_metrics", queue="maintenance", max_retries=1)
+async def cleanup_old_metrics(retention_days: int = 90):
+    """
+    Clean up old metrics data beyond retention period.
+
+    Runs weekly to purge old analytics data.
+    """
+    from nexus.database import get_async_session
+    from nexus.analytics.tasks import cleanup_old_data
+
+    async for session in get_async_session():
+        result = await cleanup_old_data(session, retention_days)
+        return result
+
+
+@task(name="nexus.cleanup_delivery_logs", queue="maintenance", max_retries=1)
+async def cleanup_delivery_logs(retention_days: int = 30):
+    """
+    Clean up old webhook delivery logs.
+
+    Runs weekly to purge old delivery logs.
+    """
+    from nexus.database import get_async_session
+    from datetime import datetime, timedelta
+    from sqlalchemy import delete
+    from nexus.webhooks.models import WebhookDeliveryLog
+
+    async for session in get_async_session():
+        cutoff = datetime.utcnow() - timedelta(days=retention_days)
+        result = await session.execute(
+            delete(WebhookDeliveryLog).where(WebhookDeliveryLog.created_at < cutoff)
+        )
+        await session.commit()
+        return {"deleted": result.rowcount}
+
+
+@task(name="nexus.refresh_tenant_limits", queue="tenants", max_retries=2)
+async def refresh_tenant_limits():
+    """
+    Refresh cached tenant limits.
+
+    Runs hourly to update limit calculations.
+    """
+    from nexus.database import get_async_session
+    from nexus.tenants.limits import LimitsService
+
+    async for session in get_async_session():
+        service = LimitsService(session)
+        result = await service.refresh_all_limits()
+        return result

@@ -142,3 +142,40 @@ async def test_memory(db_session: AsyncSession, test_agent):
     db_session.add(memory)
     await db_session.commit()
     return memory
+
+
+@pytest_asyncio.fixture
+async def test_webhook(db_session: AsyncSession, test_agent):
+    """Create a test webhook endpoint."""
+    from nexus.webhooks.models import WebhookEndpoint
+    import secrets
+
+    webhook = WebhookEndpoint(
+        agent_id=test_agent.id,
+        name="Test Webhook",
+        url="https://httpbin.org/post",
+        secret=secrets.token_urlsafe(32),
+        event_types=["memory.*", "agent.*"],
+    )
+    db_session.add(webhook)
+    await db_session.commit()
+    return webhook
+
+
+@pytest_asyncio.fixture
+async def test_relationship(db_session: AsyncSession, test_agent, test_memory):
+    """Create a test graph relationship."""
+    from nexus.graph.models import MemoryRelationship, NodeType, RelationshipType
+    from uuid import uuid4
+
+    relationship = MemoryRelationship(
+        source_type=NodeType.MEMORY,
+        source_id=test_memory.id,
+        target_type=NodeType.MEMORY,
+        target_id=uuid4(),
+        relationship_type=RelationshipType.REFERENCES,
+        created_by_agent_id=test_agent.id,
+    )
+    db_session.add(relationship)
+    await db_session.commit()
+    return relationship
