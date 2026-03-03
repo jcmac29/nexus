@@ -37,6 +37,14 @@ from nexus.scheduling import routes as scheduling_routes
 from nexus.queues import routes as queues_routes
 from nexus.connectors import routes as connectors_routes
 from nexus.tracing import routes as tracing_routes
+from nexus.phone import routes as phone_routes
+from nexus.sms import routes as sms_routes
+from nexus.email import routes as email_routes
+from nexus.video import routes as video_routes
+from nexus.notifications import routes as notifications_routes
+from nexus.chat import routes as chat_routes
+from nexus.calendar import routes as calendar_routes
+from nexus.documents import routes as documents_routes
 
 settings = get_settings()
 
@@ -256,6 +264,54 @@ app.include_router(
 # Distributed tracing
 app.include_router(
     tracing_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Phone/Voice communication
+app.include_router(
+    phone_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# SMS messaging
+app.include_router(
+    sms_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Email communication
+app.include_router(
+    email_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Video conferencing
+app.include_router(
+    video_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Push notifications
+app.include_router(
+    notifications_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Chat platform integrations (Slack, Discord, Telegram, etc.)
+app.include_router(
+    chat_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Calendar and scheduling
+app.include_router(
+    calendar_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Collaborative documents
+app.include_router(
+    documents_routes.router,
     prefix=settings.api_prefix,
 )
 
