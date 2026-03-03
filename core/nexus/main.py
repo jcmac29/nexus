@@ -28,6 +28,15 @@ from nexus.public import routes as public_routes
 from nexus.profiles import routes as profile_routes
 from nexus.oauth import routes as oauth_routes
 from nexus.audit import routes as audit_routes
+from nexus.websockets import routes as websocket_routes
+from nexus.conversations import routes as conversation_routes
+from nexus.tools import routes as tools_routes
+from nexus.events import routes as events_routes
+from nexus.orchestration import routes as orchestration_routes
+from nexus.scheduling import routes as scheduling_routes
+from nexus.queues import routes as queues_routes
+from nexus.connectors import routes as connectors_routes
+from nexus.tracing import routes as tracing_routes
 
 settings = get_settings()
 
@@ -193,6 +202,60 @@ app.include_router(
 # Audit logging routes
 app.include_router(
     audit_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# WebSocket routes (real-time bidirectional)
+app.include_router(
+    websocket_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Conversation threads
+app.include_router(
+    conversation_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Tool registry
+app.include_router(
+    tools_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Event bus (pub/sub)
+app.include_router(
+    events_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Orchestration (multi-agent workflows)
+app.include_router(
+    orchestration_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Scheduling (cron jobs)
+app.include_router(
+    scheduling_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Priority queues
+app.include_router(
+    queues_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# External connectors (databases, APIs)
+app.include_router(
+    connectors_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Distributed tracing
+app.include_router(
+    tracing_routes.router,
     prefix=settings.api_prefix,
 )
 
