@@ -125,6 +125,79 @@ Nexus works as an MCP server, so Claude and other MCP clients can use it directl
 }
 ```
 
+### Graph Memory
+Track relationships between memories, agents, and capabilities:
+
+```python
+# Create a relationship between memories
+nexus.graph.create_relationship(
+    source_type="memory",
+    source_id=memory_a_id,
+    target_type="memory",
+    target_id=memory_b_id,
+    relationship_type="references"
+)
+
+# Find related memories
+related = nexus.graph.get_related_memories(memory_id)
+
+# Traverse the graph
+nodes = nexus.graph.traverse(
+    start_type="memory",
+    start_id=memory_id,
+    max_depth=2
+)
+```
+
+### Webhooks
+Receive real-time notifications when events occur:
+
+```python
+# Register a webhook endpoint
+webhook = nexus.webhooks.create(
+    name="My Webhook",
+    url="https://example.com/webhook",
+    event_types=["memory.*", "agent.connected"]
+)
+
+# Webhook payloads are signed with HMAC-SHA256
+# Verify with: X-Nexus-Signature header
+```
+
+### Usage Analytics
+Track API usage, storage, and performance:
+
+```python
+# Get dashboard summary
+dashboard = nexus.analytics.dashboard(days=7)
+
+# Get detailed usage metrics
+usage = nexus.analytics.usage(
+    metric_types=["api_request", "memory_store"],
+    granularity="day"
+)
+
+# Export data
+nexus.analytics.export(format="csv", start_date="2024-01-01")
+```
+
+### Multi-Tenant (Hosted Cloud)
+For SaaS deployments with tenant isolation:
+
+```python
+# Configure tenant settings
+settings = nexus.tenants.create_settings(
+    subdomain="acme",  # acme.nexus-cloud.com
+    features={"graph_memory": True, "webhooks": True}
+)
+
+# Invite team members
+nexus.tenants.invite(email="user@acme.com", role="member")
+
+# Check resource limits
+limits = nexus.tenants.get_limits()
+```
+
 ## API Reference
 
 ### Identity
@@ -157,6 +230,50 @@ Nexus works as an MCP server, so Claude and other MCP clients can use it directl
 | `/api/v1/capabilities/{name}` | DELETE | Remove capability |
 | `/api/v1/discover` | GET | Search all capabilities |
 | `/api/v1/discover/agents/{id}` | GET | Get agent capabilities |
+
+### Graph
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/graph/relationships` | POST | Create relationship |
+| `/api/v1/graph/relationships/{id}` | DELETE | Delete relationship |
+| `/api/v1/graph/nodes/{type}/{id}/edges` | GET | Get node edges |
+| `/api/v1/graph/traverse` | POST | Traverse graph |
+| `/api/v1/graph/path` | POST | Find shortest path |
+| `/api/v1/graph/memories/{id}/related` | GET | Get related memories |
+
+### Webhooks
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/webhooks` | POST | Create webhook |
+| `/api/v1/webhooks` | GET | List webhooks |
+| `/api/v1/webhooks/{id}` | GET | Get webhook |
+| `/api/v1/webhooks/{id}` | PATCH | Update webhook |
+| `/api/v1/webhooks/{id}` | DELETE | Delete webhook |
+| `/api/v1/webhooks/{id}/test` | POST | Test webhook |
+| `/api/v1/webhooks/{id}/deliveries` | GET | List delivery logs |
+
+### Analytics
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/analytics/dashboard` | GET | Dashboard summary |
+| `/api/v1/analytics/usage` | GET | Usage metrics |
+| `/api/v1/analytics/endpoints` | GET | Endpoint metrics |
+| `/api/v1/analytics/storage` | GET | Storage usage |
+| `/api/v1/analytics/export` | GET | Export data |
+
+### Tenants
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/v1/tenants/settings` | GET | Get tenant settings |
+| `/api/v1/tenants/settings` | POST | Create tenant settings |
+| `/api/v1/tenants/settings` | PATCH | Update tenant settings |
+| `/api/v1/tenants/limits` | GET | Get resource limits |
+| `/api/v1/tenants/invites` | POST | Create invite |
+| `/api/v1/tenants/invites` | GET | List invites |
 
 ## Self-Hosting
 
@@ -240,10 +357,10 @@ nexus/
 - [x] Python SDK
 - [x] TypeScript SDK
 - [x] MCP integration
-- [ ] Graph memory (relationships)
-- [ ] Webhooks
-- [ ] Usage analytics
-- [ ] Hosted cloud version
+- [x] Graph memory (relationships)
+- [x] Webhooks
+- [x] Usage analytics
+- [x] Hosted cloud version
 
 ## License
 
