@@ -133,16 +133,18 @@ async def test_agent(db_session: AsyncSession):
 @pytest_asyncio.fixture
 async def test_memory(db_session: AsyncSession, test_agent):
     """Create test memory for an agent."""
-    from nexus.memory.models import Memory
+    from nexus.memory.models import Memory, MemoryScope
 
     memory = Memory(
         agent_id=test_agent.id,
         key="test-key",
         value={"data": "test value"},
-        memory_type="test",
+        scope=MemoryScope.AGENT,
+        text_content="test value for search",
     )
     db_session.add(memory)
     await db_session.commit()
+    await db_session.refresh(memory)
     return memory
 
 
