@@ -74,14 +74,15 @@ class LimitsService:
             select(func.count()).select_from(Memory).where(Memory.account_id == account_id)
         )
 
-        # Get team member count
+        # Get team member count (join through owner agent to get account)
         from nexus.teams.models import Team, TeamMember
 
         team_member_count = await self.db.execute(
             select(func.count(func.distinct(TeamMember.agent_id)))
             .select_from(TeamMember)
-            .join(Team)
-            .where(Team.account_id == account_id)
+            .join(Team, TeamMember.team_id == Team.id)
+            .join(Agent, Team.owner_agent_id == Agent.id)
+            .where(Agent.account_id == account_id)
         )
 
         return {

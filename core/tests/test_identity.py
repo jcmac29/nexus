@@ -1,5 +1,6 @@
 """Tests for identity module."""
 
+import uuid
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,11 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 @pytest.mark.asyncio
 async def test_register_agent(client: AsyncClient, db_session: AsyncSession):
     """Test agent registration."""
+    unique_slug = f"new-test-agent-{uuid.uuid4().hex[:8]}"
     response = await client.post(
         "/api/v1/agents",
         json={
             "name": "new-test-agent",
-            "slug": "new-test-agent-unique-123",
+            "slug": unique_slug,
             "description": "A test agent",
         },
     )

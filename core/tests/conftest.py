@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
 from typing import AsyncGenerator, Generator
 
 import pytest
@@ -15,6 +16,11 @@ from sqlalchemy.pool import NullPool
 from nexus.database import Base, get_db
 from nexus.config import get_settings
 from nexus.main import app
+
+
+def unique_slug(prefix: str = "test") -> str:
+    """Generate a unique slug for test entities."""
+    return f"{prefix}-{uuid.uuid4().hex[:8]}"
 
 
 # Test database URL
@@ -88,8 +94,17 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
 async def authenticated_client(client: AsyncClient, db_session: AsyncSession) -> AsyncClient:
     """Create an authenticated test client."""
     from nexus.identity.service import IdentityService
+    from nexus.billing.models import Account
 
-    # Create a test agent
+    # Create a test account for multi-tenant support
+    account = Account(
+        name="Test Account",
+        email=f"test-{uuid.uuid4().hex[:8]}@example.com",
+    )
+    db_session.add(account)
+    await db_session.flush()
+
+    # Create a test agent with account_id
     service = IdentityService(db_session)
     agent = await service.register_agent(
         name="test-agent",
@@ -97,6 +112,9 @@ async def authenticated_client(client: AsyncClient, db_session: AsyncSession) ->
         description="Test agent for automated tests",
         capabilities=["test"],
     )
+
+    # Associate agent with account
+    agent.account_id = account.id
     await db_session.commit()
 
     # Add auth header

@@ -3,7 +3,8 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from typing import Any
 
 from nexus.graph.models import NodeType, RelationshipType
 
@@ -30,11 +31,11 @@ class RelationshipResponse(BaseModel):
     target_id: UUID
     relationship_type: RelationshipType
     weight: float
-    metadata: dict
+    metadata: dict = Field(default_factory=dict, validation_alias="metadata_")
     created_by_agent_id: UUID | None
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
 class NodeReference(BaseModel):

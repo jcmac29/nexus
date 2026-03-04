@@ -169,23 +169,23 @@ class GraphService:
             type_filter = "AND mr.relationship_type = ANY(:rel_types)"
             params["rel_types"] = type_values
 
-        # Build direction filter
+        # Build direction filter (cast enum to text for comparison with varchar)
         if direction == "outgoing":
-            join_condition = "mr.source_id = gt.node_id AND mr.source_type = gt.node_type"
-            next_node = "mr.target_id, mr.target_type"
+            join_condition = "mr.source_id = gt.node_id AND mr.source_type::text = gt.node_type"
+            next_node = "mr.target_id, mr.target_type::text"
         elif direction == "incoming":
-            join_condition = "mr.target_id = gt.node_id AND mr.target_type = gt.node_type"
-            next_node = "mr.source_id, mr.source_type"
+            join_condition = "mr.target_id = gt.node_id AND mr.target_type::text = gt.node_type"
+            next_node = "mr.source_id, mr.source_type::text"
         else:  # both
-            join_condition = "(mr.source_id = gt.node_id AND mr.source_type = gt.node_type) OR (mr.target_id = gt.node_id AND mr.target_type = gt.node_type)"
-            next_node = "CASE WHEN mr.source_id = gt.node_id THEN mr.target_id ELSE mr.source_id END, CASE WHEN mr.source_type = gt.node_type THEN mr.target_type ELSE mr.source_type END"
+            join_condition = "(mr.source_id = gt.node_id AND mr.source_type::text = gt.node_type) OR (mr.target_id = gt.node_id AND mr.target_type::text = gt.node_type)"
+            next_node = "CASE WHEN mr.source_id = gt.node_id THEN mr.target_id ELSE mr.source_id END, CASE WHEN mr.source_type::text = gt.node_type THEN mr.target_type::text ELSE mr.source_type::text END"
 
         query = text(f"""
             WITH RECURSIVE graph_traversal AS (
                 -- Base case: starting node
                 SELECT
-                    :start_id::uuid AS node_id,
-                    :start_type AS node_type,
+                    CAST(:start_id AS uuid) AS node_id,
+                    CAST(:start_type AS varchar) AS node_type,
                     0 AS depth,
                     ARRAY[]::uuid[] AS path,
                     ARRAY[]::uuid[] AS visited

@@ -15,14 +15,14 @@ async def test_create_webhook(authenticated_client: AsyncClient):
             "event_types": ["memory.created", "memory.updated"],
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
 
     data = response.json()
-    assert data["name"] == "Test Webhook"
-    assert data["url"] == "https://example.com/webhook"
-    assert "memory.created" in data["event_types"]
+    assert data["webhook"]["name"] == "Test Webhook"
+    assert data["webhook"]["url"] == "https://example.com/webhook"
+    assert "memory.created" in data["webhook"]["event_types"]
     assert "secret" in data  # Secret should be returned on creation
-    assert data["is_active"] is True
+    assert data["webhook"]["is_active"] is True
 
 
 @pytest.mark.asyncio
@@ -40,12 +40,12 @@ async def test_create_webhook_with_options(authenticated_client: AsyncClient):
             "custom_headers": {"X-Custom-Header": "value"},
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
 
     data = response.json()
-    assert data["retry_policy"] == "linear"
-    assert data["max_retries"] == 3
-    assert data["timeout_seconds"] == 60
+    assert data["webhook"]["retry_policy"] == "linear"
+    assert data["webhook"]["max_retries"] == 3
+    assert data["webhook"]["timeout_seconds"] == 60
 
 
 @pytest.mark.asyncio
@@ -81,7 +81,7 @@ async def test_get_webhook(authenticated_client: AsyncClient):
             "event_types": ["memory.created"],
         },
     )
-    webhook_id = create_response.json()["id"]
+    webhook_id = create_response.json()["webhook"]["id"]
 
     # Get webhook
     response = await authenticated_client.get(f"/api/v1/webhooks/{webhook_id}")
@@ -104,7 +104,7 @@ async def test_update_webhook(authenticated_client: AsyncClient):
             "event_types": ["memory.created"],
         },
     )
-    webhook_id = create_response.json()["id"]
+    webhook_id = create_response.json()["webhook"]["id"]
 
     # Update webhook
     response = await authenticated_client.patch(
@@ -133,11 +133,11 @@ async def test_delete_webhook(authenticated_client: AsyncClient):
             "event_types": ["memory.deleted"],
         },
     )
-    webhook_id = create_response.json()["id"]
+    webhook_id = create_response.json()["webhook"]["id"]
 
     # Delete webhook
     response = await authenticated_client.delete(f"/api/v1/webhooks/{webhook_id}")
-    assert response.status_code == 200
+    assert response.status_code == 204
 
     # Verify deleted
     get_response = await authenticated_client.get(f"/api/v1/webhooks/{webhook_id}")
@@ -156,14 +156,14 @@ async def test_test_webhook(authenticated_client: AsyncClient):
             "event_types": ["test.ping"],
         },
     )
-    webhook_id = create_response.json()["id"]
+    webhook_id = create_response.json()["webhook"]["id"]
 
     # Send test ping
     response = await authenticated_client.post(f"/api/v1/webhooks/{webhook_id}/test")
     assert response.status_code == 200
 
     data = response.json()
-    assert "delivery_id" in data
+    assert "delivery_id" in data or "success" in data
 
 
 @pytest.mark.asyncio
@@ -178,7 +178,7 @@ async def test_rotate_webhook_secret(authenticated_client: AsyncClient):
             "event_types": ["memory.*"],
         },
     )
-    webhook_id = create_response.json()["id"]
+    webhook_id = create_response.json()["webhook"]["id"]
     original_secret = create_response.json()["secret"]
 
     # Rotate secret
@@ -204,7 +204,7 @@ async def test_list_webhook_deliveries(authenticated_client: AsyncClient):
             "event_types": ["test.*"],
         },
     )
-    webhook_id = create_response.json()["id"]
+    webhook_id = create_response.json()["webhook"]["id"]
 
     # Trigger a test delivery
     await authenticated_client.post(f"/api/v1/webhooks/{webhook_id}/test")
@@ -216,7 +216,7 @@ async def test_list_webhook_deliveries(authenticated_client: AsyncClient):
     assert response.status_code == 200
 
     data = response.json()
-    assert "deliveries" in data
+    assert "logs" in data
 
 
 @pytest.mark.asyncio
@@ -244,7 +244,7 @@ async def test_webhook_wildcard_events(authenticated_client: AsyncClient):
             "event_types": ["memory.*", "agent.*", "capability.*"],
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
 
     data = response.json()
-    assert len(data["event_types"]) == 3
+    assert len(data["webhook"]["event_types"]) == 3

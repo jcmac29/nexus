@@ -16,6 +16,7 @@ class HealthStatus(str, enum.Enum):
     DEGRADED = "degraded"
     UNHEALTHY = "unhealthy"
     UNKNOWN = "unknown"
+    OFFLINE = "offline"
 
 
 class AgentHealth(Base):
@@ -27,7 +28,8 @@ class AgentHealth(Base):
     agent_id: Mapped[UUID] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"), unique=True)
 
     status: Mapped[HealthStatus] = mapped_column(
-        Enum(HealthStatus), default=HealthStatus.UNKNOWN
+        Enum(HealthStatus, values_callable=lambda x: [e.value for e in x]),
+        default=HealthStatus.UNKNOWN,
     )
 
     # Last activity timestamps
@@ -65,7 +67,9 @@ class HealthCheck(Base):
     agent_id: Mapped[UUID] = mapped_column(ForeignKey("agents.id", ondelete="CASCADE"))
 
     check_type: Mapped[str] = mapped_column(String(50))  # heartbeat, invocation, ping
-    status: Mapped[HealthStatus] = mapped_column(Enum(HealthStatus))
+    status: Mapped[HealthStatus] = mapped_column(
+        Enum(HealthStatus, values_callable=lambda x: [e.value for e in x])
+    )
     response_time_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 

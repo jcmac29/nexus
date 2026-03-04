@@ -19,7 +19,7 @@ async def test_create_relationship(authenticated_client: AsyncClient, test_memor
             "value": {"data": "related data"},
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     target_memory_id = response.json()["id"]
 
     # Create relationship
@@ -33,7 +33,7 @@ async def test_create_relationship(authenticated_client: AsyncClient, test_memor
             "relationship_type": "references",
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
 
     data = response.json()
     assert data["source_type"] == "memory"
@@ -57,7 +57,7 @@ async def test_create_relationship_with_weight(authenticated_client: AsyncClient
             "weight": 0.75,
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     assert response.json()["weight"] == 0.75
 
 
@@ -80,7 +80,7 @@ async def test_delete_relationship(authenticated_client: AsyncClient, db_session
 
     # Delete it
     response = await authenticated_client.delete(f"/api/v1/graph/relationships/{relationship_id}")
-    assert response.status_code == 200
+    assert response.status_code == 204
 
 
 @pytest.mark.asyncio
@@ -180,7 +180,7 @@ async def test_get_related_memories(authenticated_client: AsyncClient, test_memo
     assert response.status_code == 200
 
     data = response.json()
-    assert "memories" in data
+    assert "related" in data
 
 
 @pytest.mark.asyncio
@@ -209,16 +209,16 @@ async def test_find_shortest_path(authenticated_client: AsyncClient, test_memory
     response = await authenticated_client.post(
         "/api/v1/graph/path",
         json={
-            "from_type": "memory",
-            "from_id": str(test_memory.id),
-            "to_type": "memory",
-            "to_id": target_id,
+            "source_type": "memory",
+            "source_id": str(test_memory.id),
+            "target_type": "memory",
+            "target_id": target_id,
         },
     )
     assert response.status_code == 200
 
     data = response.json()
-    assert "path" in data
+    assert "found" in data
 
 
 @pytest.mark.asyncio
@@ -238,7 +238,7 @@ async def test_duplicate_relationship_upsert(authenticated_client: AsyncClient, 
             "weight": 0.5,
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
 
     # Create again with different weight (should update)
     response = await authenticated_client.post(
@@ -252,5 +252,5 @@ async def test_duplicate_relationship_upsert(authenticated_client: AsyncClient, 
             "weight": 0.9,
         },
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     assert response.json()["weight"] == 0.9

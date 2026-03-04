@@ -63,6 +63,13 @@ from nexus.credits import routes as credits_routes
 from nexus.onboarding import routes as onboarding_routes
 from nexus.graph import routes as graph_routes
 from nexus.tenants import routes as tenants_routes
+from nexus.swarm import routes as swarm_routes
+from nexus.learning import routes as learning_routes
+from nexus.reputation import routes as reputation_routes
+from nexus.goals import routes as goals_routes
+from nexus.context import routes as context_routes
+from nexus.budgets import routes as budgets_routes
+from nexus.vitals import routes as vitals_routes
 
 settings = get_settings()
 
@@ -408,6 +415,67 @@ app.include_router(
     tenants_routes.router,
     prefix=settings.api_prefix,
 )
+
+# Swarm (multi-terminal coordination)
+app.include_router(
+    swarm_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Learning (feedback patterns, improvements)
+app.include_router(
+    learning_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Reputation (trust scores, vouching, disputes)
+app.include_router(
+    reputation_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Goals (objectives, milestones, blockers, delegations)
+app.include_router(
+    goals_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Context (context packaging and transfer between agents)
+app.include_router(
+    context_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Budgets (resource quotas and reservations)
+app.include_router(
+    budgets_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Vitals (agent health monitoring and performance metrics)
+app.include_router(
+    vitals_routes.router,
+    prefix=settings.api_prefix,
+)
+
+
+# --- Swarm WebSocket endpoint ---
+from fastapi import WebSocket, Query
+from uuid import UUID
+from nexus.database import get_db
+from nexus.swarm.websocket import handle_swarm_websocket
+
+
+@app.websocket("/api/v1/swarm/{swarm_id}/ws")
+async def swarm_websocket(
+    websocket: WebSocket,
+    swarm_id: UUID,
+    member_id: UUID = Query(...),
+):
+    """WebSocket endpoint for swarm real-time coordination."""
+    async for db in get_db():
+        await handle_swarm_websocket(websocket, swarm_id, member_id, db)
+        break
 
 
 if __name__ == "__main__":
