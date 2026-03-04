@@ -126,8 +126,8 @@ export function useFederationPeers() {
       url: string;
       trust_level: string;
       status: string;
-      last_seen: string;
-    }>>('/federation/peers'),
+      last_seen: string | null;
+    }>>('/admin/federation/peers'),
   });
 }
 
@@ -139,11 +139,11 @@ export function useAuditLogs(limit = 50) {
       id: string;
       action: string;
       resource_type: string;
-      resource_id: string;
-      agent_id: string;
+      resource_id: string | null;
+      agent_id: string | null;
       timestamp: string;
       details: Record<string, unknown>;
-    }>>(`/audit/logs?limit=${limit}`),
+    }>>(`/admin/audit/logs?limit=${limit}`),
   });
 }
 

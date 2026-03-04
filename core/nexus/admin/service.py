@@ -385,3 +385,64 @@ class AdminService:
         # TODO: Persist settings to database
         # For now, just return current settings
         return await self.get_instance_settings()
+
+    async def get_federation_peers(
+        self,
+        account_id: UUID | None = None,
+    ) -> list[dict]:
+        """Get federation peers."""
+        try:
+            from nexus.federation.models import FederationPeer
+
+            query = select(FederationPeer).order_by(FederationPeer.created_at.desc())
+
+            result = await self.db.execute(query)
+            peers = result.scalars().all()
+
+            return [
+                {
+                    "id": str(peer.id),
+                    "name": peer.name,
+                    "url": peer.url,
+                    "trust_level": peer.trust_level.value if hasattr(peer.trust_level, 'value') else str(peer.trust_level),
+                    "status": peer.status.value if hasattr(peer.status, 'value') else str(peer.status),
+                    "last_seen": peer.last_seen.isoformat() if peer.last_seen else None,
+                }
+                for peer in peers
+            ]
+        except Exception:
+            # Federation module may not have tables created yet
+            return []
+
+    async def get_audit_logs(
+        self,
+        account_id: UUID | None = None,
+        limit: int = 100,
+    ) -> list[dict]:
+        """Get audit logs."""
+        try:
+            from nexus.audit.models import AuditLog
+
+            query = select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)
+
+            if account_id:
+                query = query.where(AuditLog.account_id == account_id)
+
+            result = await self.db.execute(query)
+            logs = result.scalars().all()
+
+            return [
+                {
+                    "id": str(log.id),
+                    "action": log.action,
+                    "resource_type": log.resource_type,
+                    "resource_id": str(log.resource_id) if log.resource_id else None,
+                    "agent_id": str(log.agent_id) if log.agent_id else None,
+                    "timestamp": log.created_at.isoformat(),
+                    "details": log.details or {},
+                }
+                for log in logs
+            ]
+        except Exception:
+            # Audit module may not have tables created yet
+            return []

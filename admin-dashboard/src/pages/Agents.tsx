@@ -5,9 +5,10 @@ import { useAgents } from '../hooks/useApi';
 
 export default function Agents() {
   const [search, setSearch] = useState('');
-  const { data: agents, isLoading } = useAgents();
+  const { data, isLoading } = useAgents();
 
-  const filteredAgents = (agents ?? []).filter(
+  const agents = data?.items ?? [];
+  const filteredAgents = agents.filter(
     (agent) =>
       agent.name.toLowerCase().includes(search.toLowerCase()) ||
       agent.slug.toLowerCase().includes(search.toLowerCase())

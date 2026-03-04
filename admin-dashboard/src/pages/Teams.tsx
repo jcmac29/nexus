@@ -3,7 +3,8 @@ import DataTable from '../components/DataTable';
 import { useTeams } from '../hooks/useApi';
 
 export default function Teams() {
-  const { data: teams, isLoading } = useTeams();
+  const { data, isLoading } = useTeams();
+  const teams = data?.items ?? [];
 
   const columns = [
     { key: 'name', header: 'Team Name' },
@@ -52,7 +53,7 @@ export default function Teams() {
         </button>
       </div>
 
-      <DataTable columns={columns} data={teams ?? []} loading={isLoading} />
+      <DataTable columns={columns} data={teams} loading={isLoading} />
     </div>
   );
 }

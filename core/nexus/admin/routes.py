@@ -216,3 +216,36 @@ async def update_settings(
 
     service = AdminService(db)
     return await service.update_instance_settings(updates.model_dump(exclude_unset=True))
+
+
+# ============================================================================
+# Federation Endpoints
+# ============================================================================
+
+
+@router.get("/federation/peers")
+async def get_federation_peers(
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get federation peers."""
+    service = AdminService(db)
+    account_id = None if admin.role == AdminRole.SUPER_ADMIN else admin.account_id
+    return await service.get_federation_peers(account_id)
+
+
+# ============================================================================
+# Audit Log Endpoints
+# ============================================================================
+
+
+@router.get("/audit/logs")
+async def get_audit_logs(
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+):
+    """Get audit logs."""
+    service = AdminService(db)
+    account_id = None if admin.role == AdminRole.SUPER_ADMIN else admin.account_id
+    return await service.get_audit_logs(account_id, limit)
