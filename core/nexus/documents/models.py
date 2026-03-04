@@ -98,7 +98,7 @@ class Document(Base):
 
     # Metadata
     tags = Column(JSON, default=list)
-    metadata = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, default=dict)
     word_count = Column(Integer, default=0)
     character_count = Column(Integer, default=0)
 

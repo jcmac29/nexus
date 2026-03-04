@@ -1,7 +1,7 @@
 """Add admin users tables.
 
-Revision ID: 004_add_admin_users
-Revises: 003_add_ai_efficiency_modules
+Revision ID: 004
+Revises: 003
 Create Date: 2026-03-04 10:00:00.000000
 """
 
@@ -12,8 +12,8 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = "004_add_admin_users"
-down_revision: Union[str, None] = "003_add_ai_efficiency_modules"
+revision: str = "004"
+down_revision: Union[str, None] = "003"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

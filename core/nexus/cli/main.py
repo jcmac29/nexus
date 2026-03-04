@@ -367,16 +367,16 @@ def admin_create(
     role: str = typer.Option("admin", "--role", "-r", help="Role: super_admin, admin, or viewer"),
 ):
     """Create a new admin user for the dashboard."""
-    from nexus.database import get_db
-    from nexus.admin.models import AdminRole
-    from nexus.admin.service import AdminService
+    from uuid import uuid4
+
+    from nexus.admin.auth import hash_password
+    from nexus.config import get_settings
 
     # Validate role
-    try:
-        admin_role = AdminRole(role)
-    except ValueError:
+    valid_roles = ["super_admin", "admin", "viewer"]
+    if role not in valid_roles:
         console.print(f"[red]Invalid role: {role}[/red]")
-        console.print("Valid roles: super_admin, admin, viewer")
+        console.print(f"Valid roles: {', '.join(valid_roles)}")
         raise typer.Exit(1)
 
     # Validate password length
@@ -385,34 +385,54 @@ def admin_create(
         raise typer.Exit(1)
 
     async def run():
-        async for session in get_db():
-            service = AdminService(session)
+        import asyncpg
 
+        settings = get_settings()
+        # Convert asyncpg URL to connection params
+        db_url = settings.database_url.replace("postgresql+asyncpg://", "")
+        user_pass, host_db = db_url.split("@")
+        user, passwd = user_pass.split(":")
+        host_port, database = host_db.split("/")
+        host = host_port.split(":")[0]
+        port = int(host_port.split(":")[1]) if ":" in host_port else 5432
+
+        conn = await asyncpg.connect(
+            user=user, password=passwd, database=database, host=host, port=port
+        )
+
+        try:
             # Check if email already exists
-            from nexus.admin.models import AdminUser
-            from sqlalchemy import select
-
-            existing = await session.execute(
-                select(AdminUser).where(AdminUser.email == email)
+            existing = await conn.fetchrow(
+                "SELECT id FROM admin_users WHERE email = $1", email
             )
-            if existing.scalar_one_or_none():
+            if existing:
                 console.print(f"[red]Admin with email {email} already exists[/red]")
                 raise typer.Exit(1)
 
-            admin = await service.create_admin(
-                email=email,
-                password=password,
-                name=name,
-                role=admin_role,
+            # Create admin user
+            admin_id = uuid4()
+            password_hash = hash_password(password)
+
+            await conn.execute(
+                """
+                INSERT INTO admin_users (id, email, password_hash, name, role, is_active)
+                VALUES ($1, $2, $3, $4, $5, true)
+                """,
+                admin_id,
+                email,
+                password_hash,
+                name,
+                role,
             )
 
             console.print("[green]Admin user created successfully![/green]")
-            console.print(f"  ID:    {admin.id}")
-            console.print(f"  Email: {admin.email}")
-            console.print(f"  Name:  {admin.name}")
-            console.print(f"  Role:  {admin.role.value}")
+            console.print(f"  ID:    {admin_id}")
+            console.print(f"  Email: {email}")
+            console.print(f"  Name:  {name}")
+            console.print(f"  Role:  {role}")
             console.print("\n[yellow]You can now log in at /admin with these credentials.[/yellow]")
-            break
+        finally:
+            await conn.close()
 
     asyncio.run(run())
 

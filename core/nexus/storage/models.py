@@ -61,7 +61,7 @@ class StoredFile(Base):
     cdn_url = Column(String(2048), nullable=True)
 
     # Metadata
-    metadata = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, default=dict)
     tags = Column(JSON, default=list)
 
     # Access control

@@ -127,7 +127,7 @@ class CalendarEvent(Base):
     color = Column(String(20), nullable=True)
     visibility = Column(String(50), default="default")  # default, public, private
     busy_status = Column(String(50), default="busy")  # busy, free, tentative
-    metadata = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, default=dict)
 
     # Sync
     etag = Column(String(255), nullable=True)

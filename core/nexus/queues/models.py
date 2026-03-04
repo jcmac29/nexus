@@ -92,7 +92,7 @@ class QueueItem(Base):
 
     # Message content
     payload = Column(JSON, nullable=False)
-    metadata = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, default=dict)
 
     # Deduplication
     dedup_key = Column(String(255), nullable=True, index=True)
@@ -137,7 +137,7 @@ class DeadLetter(Base):
     original_item_id = Column(UUID(as_uuid=True), nullable=False)
 
     payload = Column(JSON, nullable=False)
-    metadata = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, default=dict)
 
     # Failure info
     failure_reason = Column(Text, nullable=True)

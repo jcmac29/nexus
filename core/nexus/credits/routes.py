@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from nexus.database import get_async_session
+from nexus.database import get_db
 from nexus.credits.service import CreditService, InsufficientCreditsError
 from nexus.credits.models import TransactionType
 
@@ -72,7 +72,7 @@ class PackageResponse(BaseModel):
 async def get_balance(
     owner_type: str,
     owner_id: UUID,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Get credit balance for an owner."""
     service = CreditService(session)
@@ -94,7 +94,7 @@ async def add_credits(
     owner_type: str,
     owner_id: UUID,
     request: AddCreditsRequest,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Add credits to a balance (purchase)."""
     service = CreditService(session)
@@ -123,7 +123,7 @@ async def transfer_credits(
     request: TransferRequest,
     from_owner_type: str = Query(...),
     from_owner_id: UUID = Query(...),
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Transfer credits between accounts."""
     service = CreditService(session)
@@ -155,7 +155,7 @@ async def request_payout(
     owner_type: str,
     owner_id: UUID,
     request: PayoutRequest,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Request a payout of earnings."""
     service = CreditService(session)
@@ -188,7 +188,7 @@ async def get_transactions(
     limit: int = Query(50, le=100),
     offset: int = 0,
     transaction_type: Optional[str] = None,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Get transaction history."""
     service = CreditService(session)
@@ -216,7 +216,7 @@ async def get_transactions(
 
 @router.get("/packages", response_model=list[PackageResponse])
 async def get_packages(
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Get available credit packages."""
     service = CreditService(session)
@@ -243,7 +243,7 @@ async def purchase_package(
     owner_type: str = Query(...),
     owner_id: UUID = Query(...),
     payment_method_id: Optional[str] = None,
-    session: AsyncSession = Depends(get_async_session),
+    session: AsyncSession = Depends(get_db),
 ):
     """Purchase a credit package."""
     from sqlalchemy import select

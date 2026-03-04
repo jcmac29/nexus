@@ -114,7 +114,7 @@ class ConversationMessage(Base):
     tool_output = Column(JSON, nullable=True)
 
     # Message metadata
-    metadata = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, default=dict)
 
     # Reply threading
     reply_to_id = Column(UUID(as_uuid=True), ForeignKey("conversation_messages.id"), nullable=True)

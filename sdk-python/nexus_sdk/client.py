@@ -13,6 +13,13 @@ from nexus_sdk.graph import Graph, GraphAsync
 from nexus_sdk.webhooks import Webhooks, WebhooksAsync
 from nexus_sdk.analytics import Analytics, AnalyticsAsync
 from nexus_sdk.tenants import Tenants, TenantsAsync
+from nexus_sdk.swarm import Swarm, SwarmAsync
+from nexus_sdk.learning import Learning, LearningAsync
+from nexus_sdk.reputation import Reputation, ReputationAsync
+from nexus_sdk.goals import Goals, GoalsAsync
+from nexus_sdk.context import Context, ContextAsync
+from nexus_sdk.budgets import Budgets, BudgetsAsync
+from nexus_sdk.vitals import Vitals, VitalsAsync
 
 
 class HTTPClient:
@@ -87,6 +94,13 @@ class Nexus:
         self._webhooks = Webhooks(self._client)
         self._analytics = Analytics(self._client)
         self._tenants = Tenants(self._client)
+        self._swarm = Swarm(self._client)
+        self._learning = Learning(self._client)
+        self._reputation = Reputation(self._client)
+        self._goals = Goals(self._client)
+        self._context = Context(self._client)
+        self._budgets = Budgets(self._client)
+        self._vitals = Vitals(self._client)
 
     @classmethod
     def register(
@@ -169,6 +183,41 @@ class Nexus:
     def tenants(self) -> Tenants:
         """Access multi-tenant management."""
         return self._tenants
+
+    @property
+    def swarm(self) -> Swarm:
+        """Access swarm coordination for multi-terminal work."""
+        return self._swarm
+
+    @property
+    def learning(self) -> Learning:
+        """Access learning and feedback patterns."""
+        return self._learning
+
+    @property
+    def reputation(self) -> Reputation:
+        """Access reputation and trust management."""
+        return self._reputation
+
+    @property
+    def goals(self) -> Goals:
+        """Access goals and objectives management."""
+        return self._goals
+
+    @property
+    def context(self) -> Context:
+        """Access context packaging and transfer."""
+        return self._context
+
+    @property
+    def budgets(self) -> Budgets:
+        """Access resource budget management."""
+        return self._budgets
+
+    @property
+    def vitals(self) -> Vitals:
+        """Access agent health monitoring."""
+        return self._vitals
 
     def discover(
         self,
@@ -478,6 +527,13 @@ class NexusAsync:
         self._webhooks = WebhooksAsync(self._client)
         self._analytics = AnalyticsAsync(self._client)
         self._tenants = TenantsAsync(self._client)
+        self._swarm = SwarmAsync(self._client)
+        self._learning = LearningAsync(self._client)
+        self._reputation = ReputationAsync(self._client)
+        self._goals = GoalsAsync(self._client)
+        self._context = ContextAsync(self._client)
+        self._budgets = BudgetsAsync(self._client)
+        self._vitals = VitalsAsync(self._client)
 
     @classmethod
     async def register(
@@ -548,6 +604,41 @@ class NexusAsync:
     def tenants(self) -> TenantsAsync:
         """Access multi-tenant management."""
         return self._tenants
+
+    @property
+    def swarm(self) -> SwarmAsync:
+        """Access swarm coordination for multi-terminal work."""
+        return self._swarm
+
+    @property
+    def learning(self) -> LearningAsync:
+        """Access learning and feedback patterns."""
+        return self._learning
+
+    @property
+    def reputation(self) -> ReputationAsync:
+        """Access reputation and trust management."""
+        return self._reputation
+
+    @property
+    def goals(self) -> GoalsAsync:
+        """Access goals and objectives management."""
+        return self._goals
+
+    @property
+    def context(self) -> ContextAsync:
+        """Access context packaging and transfer."""
+        return self._context
+
+    @property
+    def budgets(self) -> BudgetsAsync:
+        """Access resource budget management."""
+        return self._budgets
+
+    @property
+    def vitals(self) -> VitalsAsync:
+        """Access agent health monitoring."""
+        return self._vitals
 
     async def discover(
         self,

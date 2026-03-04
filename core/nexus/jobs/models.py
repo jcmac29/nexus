@@ -76,7 +76,7 @@ class BackgroundJob(Base):
     progress_message = Column(String(500), nullable=True)
 
     # Metadata
-    metadata = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, default=dict)
     tags = Column(JSON, default=list)
 
     # Ownership

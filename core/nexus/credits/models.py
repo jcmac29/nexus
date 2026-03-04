@@ -118,7 +118,7 @@ class CreditTransaction(Base):
     payment_method = Column(String(50), nullable=True)
 
     # Metadata
-    metadata = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, default=dict)
 
     # Status
     status = Column(String(50), nullable=False, default="completed")  # pending, completed, failed, reversed

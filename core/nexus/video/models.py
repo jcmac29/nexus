@@ -102,7 +102,7 @@ class VideoRoom(Base):
     duration_seconds = Column(Integer, nullable=True)
 
     # Metadata
-    metadata = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, default=dict)
     tags = Column(JSON, default=list)
 
     created_at = Column(DateTime, default=datetime.utcnow)

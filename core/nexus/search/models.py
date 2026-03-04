@@ -53,7 +53,7 @@ class SearchIndex(Base):
 
     # Metadata for filtering
     tags = Column(JSON, default=list)
-    metadata = Column(JSON, default=dict)
+    metadata_ = Column("metadata", JSON, default=dict)
     categories = Column(JSON, default=list)
 
     # Relevance hints

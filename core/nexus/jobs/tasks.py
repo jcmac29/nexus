@@ -119,10 +119,10 @@ async def aggregate_hourly_metrics():
 
     Runs every hour to roll up real-time counters.
     """
-    from nexus.database import get_async_session
+    from nexus.database import get_db
     from nexus.analytics.collector import MetricsCollector
 
-    async for session in get_async_session():
+    async for session in get_db():
         collector = MetricsCollector(session)
         result = await collector.flush_to_database()
         return result
@@ -135,10 +135,10 @@ async def aggregate_daily_metrics():
 
     Runs daily to compute daily aggregates and percentiles.
     """
-    from nexus.database import get_async_session
+    from nexus.database import get_db
     from nexus.analytics.tasks import roll_up_daily_metrics
 
-    async for session in get_async_session():
+    async for session in get_db():
         result = await roll_up_daily_metrics(session)
         return result
 
@@ -150,10 +150,10 @@ async def calculate_storage_usage():
 
     Runs daily to update storage_usage table.
     """
-    from nexus.database import get_async_session
+    from nexus.database import get_db
     from nexus.analytics.tasks import calculate_storage_snapshots
 
-    async for session in get_async_session():
+    async for session in get_db():
         result = await calculate_storage_snapshots(session)
         return result
 
@@ -165,10 +165,10 @@ async def retry_failed_webhooks():
 
     Runs every minute to process webhook retry queue.
     """
-    from nexus.database import get_async_session
+    from nexus.database import get_db
     from nexus.webhooks.service import WebhookService
 
-    async for session in get_async_session():
+    async for session in get_db():
         service = WebhookService(session)
         result = await service.process_retry_queue()
         return result
@@ -181,10 +181,10 @@ async def cleanup_old_metrics(retention_days: int = 90):
 
     Runs weekly to purge old analytics data.
     """
-    from nexus.database import get_async_session
+    from nexus.database import get_db
     from nexus.analytics.tasks import cleanup_old_data
 
-    async for session in get_async_session():
+    async for session in get_db():
         result = await cleanup_old_data(session, retention_days)
         return result
 
@@ -196,12 +196,12 @@ async def cleanup_delivery_logs(retention_days: int = 30):
 
     Runs weekly to purge old delivery logs.
     """
-    from nexus.database import get_async_session
+    from nexus.database import get_db
     from datetime import datetime, timedelta
     from sqlalchemy import delete
     from nexus.webhooks.models import WebhookDeliveryLog
 
-    async for session in get_async_session():
+    async for session in get_db():
         cutoff = datetime.utcnow() - timedelta(days=retention_days)
         result = await session.execute(
             delete(WebhookDeliveryLog).where(WebhookDeliveryLog.created_at < cutoff)
@@ -217,10 +217,10 @@ async def refresh_tenant_limits():
 
     Runs hourly to update limit calculations.
     """
-    from nexus.database import get_async_session
+    from nexus.database import get_db
     from nexus.tenants.limits import LimitsService
 
-    async for session in get_async_session():
+    async for session in get_db():
         service = LimitsService(session)
         result = await service.refresh_all_limits()
         return result
