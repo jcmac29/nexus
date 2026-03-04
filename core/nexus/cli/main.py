@@ -112,12 +112,12 @@ def agent_list(
     status: Optional[str] = typer.Option(None, "--status", "-s", help="Filter by status"),
 ):
     """List registered agents."""
-    from nexus.database import get_async_session
+    from nexus.database import get_db
     from nexus.identity.models import Agent
     from sqlalchemy import select
 
     async def run():
-        async with get_async_session() as session:
+        async with get_db() as session:
             query = select(Agent).limit(limit)
             if status:
                 query = query.where(Agent.status == status)
@@ -153,11 +153,11 @@ def agent_create(
     description: str = typer.Option("", "--description", "-d", help="Agent description"),
 ):
     """Create a new agent."""
-    from nexus.database import get_async_session
+    from nexus.database import get_db
     from nexus.identity.service import IdentityService
 
     async def run():
-        async with get_async_session() as session:
+        async with get_db() as session:
             service = IdentityService(session)
             agent = await service.register_agent(
                 name=name,
@@ -186,12 +186,12 @@ def agent_delete(
         if not confirm:
             raise typer.Abort()
 
-    from nexus.database import get_async_session
+    from nexus.database import get_db
     from nexus.identity.models import Agent
     from sqlalchemy import select, delete
 
     async def run():
-        async with get_async_session() as session:
+        async with get_db() as session:
             result = await session.execute(
                 delete(Agent).where(Agent.id == agent_id)
             )
@@ -234,12 +234,12 @@ def job_list(
     status: str = typer.Option("pending", "--status", "-s", help="Job status filter"),
 ):
     """List background jobs."""
-    from nexus.database import get_async_session
+    from nexus.database import get_db
     from nexus.jobs.models import Job
     from sqlalchemy import select
 
     async def run():
-        async with get_async_session() as session:
+        async with get_db() as session:
             query = select(Job).where(
                 Job.queue == queue,
                 Job.status == status,
@@ -351,6 +351,178 @@ def config():
         table.add_row(key, str(value))
 
     console.print(table)
+
+
+# --- Admin Commands ---
+
+admin_app = typer.Typer(help="Admin user management commands")
+app.add_typer(admin_app, name="admin")
+
+
+@admin_app.command("create")
+def admin_create(
+    email: str = typer.Option(..., "--email", "-e", help="Admin email address"),
+    password: str = typer.Option(..., "--password", "-p", help="Admin password (min 8 chars)"),
+    name: str = typer.Option(..., "--name", "-n", help="Admin display name"),
+    role: str = typer.Option("admin", "--role", "-r", help="Role: super_admin, admin, or viewer"),
+):
+    """Create a new admin user for the dashboard."""
+    from nexus.database import get_db
+    from nexus.admin.models import AdminRole
+    from nexus.admin.service import AdminService
+
+    # Validate role
+    try:
+        admin_role = AdminRole(role)
+    except ValueError:
+        console.print(f"[red]Invalid role: {role}[/red]")
+        console.print("Valid roles: super_admin, admin, viewer")
+        raise typer.Exit(1)
+
+    # Validate password length
+    if len(password) < 8:
+        console.print("[red]Password must be at least 8 characters[/red]")
+        raise typer.Exit(1)
+
+    async def run():
+        async for session in get_db():
+            service = AdminService(session)
+
+            # Check if email already exists
+            from nexus.admin.models import AdminUser
+            from sqlalchemy import select
+
+            existing = await session.execute(
+                select(AdminUser).where(AdminUser.email == email)
+            )
+            if existing.scalar_one_or_none():
+                console.print(f"[red]Admin with email {email} already exists[/red]")
+                raise typer.Exit(1)
+
+            admin = await service.create_admin(
+                email=email,
+                password=password,
+                name=name,
+                role=admin_role,
+            )
+
+            console.print("[green]Admin user created successfully![/green]")
+            console.print(f"  ID:    {admin.id}")
+            console.print(f"  Email: {admin.email}")
+            console.print(f"  Name:  {admin.name}")
+            console.print(f"  Role:  {admin.role.value}")
+            console.print("\n[yellow]You can now log in at /admin with these credentials.[/yellow]")
+            break
+
+    asyncio.run(run())
+
+
+@admin_app.command("list")
+def admin_list():
+    """List all admin users."""
+    from nexus.database import get_db
+    from nexus.admin.models import AdminUser
+    from sqlalchemy import select
+
+    async def run():
+        async for session in get_db():
+            result = await session.execute(select(AdminUser))
+            admins = result.scalars().all()
+
+            if not admins:
+                console.print("[yellow]No admin users found.[/yellow]")
+                console.print("Create one with: nexus admin create --email admin@example.com --password <password> --name Admin")
+                return
+
+            table = Table(title="Admin Users")
+            table.add_column("ID", style="cyan")
+            table.add_column("Email", style="green")
+            table.add_column("Name")
+            table.add_column("Role", style="yellow")
+            table.add_column("Active")
+            table.add_column("Last Login")
+
+            for admin in admins:
+                table.add_row(
+                    str(admin.id)[:8] + "...",
+                    admin.email,
+                    admin.name,
+                    admin.role.value,
+                    "[green]Yes[/green]" if admin.is_active else "[red]No[/red]",
+                    str(admin.last_login) if admin.last_login else "Never",
+                )
+
+            console.print(table)
+            console.print(f"\nTotal: {len(admins)} admin users")
+            break
+
+    asyncio.run(run())
+
+
+@admin_app.command("delete")
+def admin_delete(
+    email: str = typer.Argument(..., help="Admin email to delete"),
+    force: bool = typer.Option(False, "--force", "-f", help="Skip confirmation"),
+):
+    """Delete an admin user."""
+    if not force:
+        confirm = typer.confirm(f"Delete admin user {email}?")
+        if not confirm:
+            raise typer.Abort()
+
+    from nexus.database import get_db
+    from nexus.admin.models import AdminUser
+    from sqlalchemy import select, delete
+
+    async def run():
+        async for session in get_db():
+            result = await session.execute(
+                delete(AdminUser).where(AdminUser.email == email)
+            )
+            await session.commit()
+
+            if result.rowcount > 0:
+                console.print(f"[green]Admin user {email} deleted[/green]")
+            else:
+                console.print(f"[red]Admin user {email} not found[/red]")
+            break
+
+    asyncio.run(run())
+
+
+@admin_app.command("reset-password")
+def admin_reset_password(
+    email: str = typer.Argument(..., help="Admin email"),
+    password: str = typer.Option(..., "--password", "-p", help="New password (min 8 chars)"),
+):
+    """Reset an admin user's password."""
+    if len(password) < 8:
+        console.print("[red]Password must be at least 8 characters[/red]")
+        raise typer.Exit(1)
+
+    from nexus.database import get_db
+    from nexus.admin.models import AdminUser
+    from nexus.admin.auth import hash_password
+    from sqlalchemy import select
+
+    async def run():
+        async for session in get_db():
+            result = await session.execute(
+                select(AdminUser).where(AdminUser.email == email)
+            )
+            admin = result.scalar_one_or_none()
+
+            if not admin:
+                console.print(f"[red]Admin user {email} not found[/red]")
+                raise typer.Exit(1)
+
+            admin.password_hash = hash_password(password)
+            await session.commit()
+
+            console.print(f"[green]Password reset for {email}[/green]")
+            break
+
+    asyncio.run(run())
 
 
 @app.command()
