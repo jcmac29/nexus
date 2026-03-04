@@ -65,7 +65,9 @@ services:
           memory: 2G
 
   api:
-    image: ${DOCKER_REGISTRY:-nexus}/api:${VERSION:-latest}
+    build:
+      context: ./core
+      dockerfile: Dockerfile
     container_name: nexus-api
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
@@ -130,7 +132,9 @@ services:
       start_period: 40s
 
   worker:
-    image: ${DOCKER_REGISTRY:-nexus}/api:${VERSION:-latest}
+    build:
+      context: ./core
+      dockerfile: Dockerfile
     container_name: nexus-worker
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
