@@ -10,7 +10,10 @@ from nexus.admin.models import AdminRole, AdminUser
 from nexus.admin.schemas import (
     ActivityItem,
     AdminUserResponse,
+    AgentCreate,
+    AgentDetail,
     AgentSummary,
+    AgentUpdate,
     DashboardStats,
     InstanceSettings,
     InstanceSettingsUpdate,
@@ -19,7 +22,11 @@ from nexus.admin.schemas import (
     MemorySearchResult,
     PaginatedResponse,
     RefreshRequest,
+    TeamCreate,
+    TeamDetail,
+    TeamMemberAdd,
     TeamSummary,
+    TeamUpdate,
 )
 from nexus.admin.service import AdminService
 from nexus.database import get_db
@@ -184,6 +191,357 @@ async def get_recent_activity(
 
     account_id = None if admin.role == AdminRole.SUPER_ADMIN else admin.account_id
     return await service.get_recent_activity(account_id, limit)
+
+
+# ============================================================================
+# Agent CRUD Endpoints
+# ============================================================================
+
+
+@router.post("/agents", response_model=AgentSummary, status_code=status.HTTP_201_CREATED)
+async def create_agent(
+    data: AgentCreate,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new agent."""
+    if admin.role not in [AdminRole.SUPER_ADMIN, AdminRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can create agents",
+        )
+
+    service = AdminService(db)
+    account_id = None if admin.role == AdminRole.SUPER_ADMIN else admin.account_id
+
+    try:
+        return await service.create_agent(
+            name=data.name,
+            slug=data.slug,
+            description=data.description,
+            status=data.status,
+            account_id=account_id,
+        )
+    except Exception as e:
+        if "unique" in str(e).lower() or "duplicate" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Agent with this slug already exists",
+            )
+        raise
+
+
+@router.get("/agents/{agent_id}")
+async def get_agent(
+    agent_id: str,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get agent details by ID."""
+    from uuid import UUID
+
+    service = AdminService(db)
+    agent = await service.get_agent(UUID(agent_id))
+
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent not found",
+        )
+
+    return agent
+
+
+@router.put("/agents/{agent_id}")
+async def update_agent(
+    agent_id: str,
+    data: AgentUpdate,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update an agent."""
+    from uuid import UUID
+
+    if admin.role not in [AdminRole.SUPER_ADMIN, AdminRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can update agents",
+        )
+
+    service = AdminService(db)
+    agent = await service.update_agent(
+        UUID(agent_id),
+        data.model_dump(exclude_unset=True),
+    )
+
+    if not agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent not found",
+        )
+
+    return agent
+
+
+@router.delete("/agents/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_agent(
+    agent_id: str,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete an agent."""
+    from uuid import UUID
+
+    if admin.role not in [AdminRole.SUPER_ADMIN, AdminRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can delete agents",
+        )
+
+    service = AdminService(db)
+    deleted = await service.delete_agent(UUID(agent_id))
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent not found",
+        )
+
+
+# ============================================================================
+# Team CRUD Endpoints
+# ============================================================================
+
+
+@router.post("/teams", response_model=TeamSummary, status_code=status.HTTP_201_CREATED)
+async def create_team(
+    data: TeamCreate,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new team."""
+    if admin.role not in [AdminRole.SUPER_ADMIN, AdminRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can create teams",
+        )
+
+    service = AdminService(db)
+
+    try:
+        return await service.create_team(
+            name=data.name,
+            slug=data.slug,
+            owner_agent_id=data.owner_agent_id,
+            description=data.description,
+        )
+    except Exception as e:
+        if "unique" in str(e).lower() or "duplicate" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Team with this slug already exists",
+            )
+        if "foreign key" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Owner agent not found",
+            )
+        raise
+
+
+@router.get("/teams/{team_id}")
+async def get_team(
+    team_id: str,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get team details by ID."""
+    from uuid import UUID
+
+    service = AdminService(db)
+    team = await service.get_team(UUID(team_id))
+
+    if not team:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Team not found",
+        )
+
+    return team
+
+
+@router.put("/teams/{team_id}")
+async def update_team(
+    team_id: str,
+    data: TeamUpdate,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update a team."""
+    from uuid import UUID
+
+    if admin.role not in [AdminRole.SUPER_ADMIN, AdminRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can update teams",
+        )
+
+    service = AdminService(db)
+    team = await service.update_team(
+        UUID(team_id),
+        data.model_dump(exclude_unset=True),
+    )
+
+    if not team:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Team not found",
+        )
+
+    return team
+
+
+@router.delete("/teams/{team_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_team(
+    team_id: str,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a team."""
+    from uuid import UUID
+
+    if admin.role not in [AdminRole.SUPER_ADMIN, AdminRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can delete teams",
+        )
+
+    service = AdminService(db)
+    deleted = await service.delete_team(UUID(team_id))
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Team not found",
+        )
+
+
+@router.post("/teams/{team_id}/members", status_code=status.HTTP_201_CREATED)
+async def add_team_member(
+    team_id: str,
+    data: TeamMemberAdd,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Add a member to a team."""
+    from uuid import UUID
+
+    if admin.role not in [AdminRole.SUPER_ADMIN, AdminRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can manage team members",
+        )
+
+    service = AdminService(db)
+
+    try:
+        added = await service.add_team_member(
+            UUID(team_id),
+            data.agent_id,
+            data.role,
+        )
+    except Exception as e:
+        if "foreign key" in str(e).lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Agent or team not found",
+            )
+        raise
+
+    if not added:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agent is already a team member",
+        )
+
+    return {"message": "Member added successfully"}
+
+
+@router.delete("/teams/{team_id}/members/{agent_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_team_member(
+    team_id: str,
+    agent_id: str,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Remove a member from a team."""
+    from uuid import UUID
+
+    if admin.role not in [AdminRole.SUPER_ADMIN, AdminRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can manage team members",
+        )
+
+    service = AdminService(db)
+    removed = await service.remove_team_member(UUID(team_id), UUID(agent_id))
+
+    if not removed:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Member not found in team",
+        )
+
+
+# ============================================================================
+# Memory Management Endpoints
+# ============================================================================
+
+
+@router.delete("/memories/{memory_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_memory(
+    memory_id: str,
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete a memory."""
+    from uuid import UUID
+
+    if admin.role not in [AdminRole.SUPER_ADMIN, AdminRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can delete memories",
+        )
+
+    service = AdminService(db)
+    deleted = await service.delete_memory(UUID(memory_id))
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Memory not found",
+        )
+
+
+@router.post("/memories/bulk-delete")
+async def bulk_delete_memories(
+    memory_ids: list[str],
+    admin: AdminUser = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete multiple memories."""
+    from uuid import UUID
+
+    if admin.role not in [AdminRole.SUPER_ADMIN, AdminRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only admins can delete memories",
+        )
+
+    service = AdminService(db)
+    deleted = await service.bulk_delete_memories([UUID(mid) for mid in memory_ids])
+
+    return {"deleted": deleted}
 
 
 # ============================================================================

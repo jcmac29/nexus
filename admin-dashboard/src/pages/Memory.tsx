@@ -1,19 +1,86 @@
-import { Search, Filter, Database, User, Clock } from 'lucide-react';
+import { Search, Database, User, Clock, Trash2, Eye, CheckSquare, Square } from 'lucide-react';
 import { useState } from 'react';
-import { useMemorySearch } from '../hooks/useApi';
+import { useMemorySearch, useDeleteMemory, useBulkDeleteMemories } from '../hooks/useApi';
 import { format } from 'date-fns';
+import Pagination from '../components/Pagination';
+import EmptyState from '../components/EmptyState';
+import MemoryModal from '../components/modals/MemoryModal';
+import { ConfirmDialog } from '../components/modals';
+import { useToast } from '../components/Toast';
+
+interface Memory {
+  id: string;
+  agent_id: string;
+  agent_name: string;
+  content: string;
+  memory_type: string;
+  created_at: string;
+  relevance_score?: number | null;
+}
 
 export default function Memory() {
   const [search, setSearch] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
+  const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
+  const [deletingMemory, setDeletingMemory] = useState<Memory | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDelete, setShowBulkDelete] = useState(false);
 
   const { data, isLoading, error } = useMemorySearch(searchQuery, page);
+  const deleteMemory = useDeleteMemory();
+  const bulkDelete = useBulkDeleteMemories();
+  const { showToast } = useToast();
+
+  const memories = data?.items ?? [];
+  const totalPages = data?.pages ?? 1;
+  const totalItems = data?.total ?? 0;
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setSearchQuery(search);
     setPage(1);
+    setSelectedIds(new Set());
+  };
+
+  const handleDelete = async () => {
+    if (!deletingMemory) return;
+    try {
+      await deleteMemory.mutateAsync(deletingMemory.id);
+      showToast('success', 'Memory deleted successfully');
+      setDeletingMemory(null);
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Failed to delete memory');
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    try {
+      const result = await bulkDelete.mutateAsync(Array.from(selectedIds));
+      showToast('success', `Deleted ${result.deleted} memories`);
+      setSelectedIds(new Set());
+      setShowBulkDelete(false);
+    } catch (error) {
+      showToast('error', error instanceof Error ? error.message : 'Failed to delete memories');
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === memories.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(memories.map((m) => m.id)));
+    }
   };
 
   return (
@@ -40,22 +107,37 @@ export default function Memory() {
         >
           Search
         </button>
-        <button
-          type="button"
-          className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50"
-        >
-          <Filter className="w-4 h-4" />
-          Filters
-        </button>
       </form>
+
+      {/* Bulk actions bar */}
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-4 p-3 bg-indigo-50 rounded-lg border border-indigo-200">
+          <span className="text-sm font-medium text-indigo-700">
+            {selectedIds.size} selected
+          </span>
+          <button
+            onClick={() => setShowBulkDelete(true)}
+            className="flex items-center gap-1 px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete Selected
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded transition-colors"
+          >
+            Clear Selection
+          </button>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border">
         {!searchQuery ? (
-          <div className="text-center py-12 text-gray-500">
-            <Database className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-            <p>Enter a search query to find memories</p>
-            <p className="text-sm mt-2">Search across all agent memories</p>
-          </div>
+          <EmptyState
+            icon="search"
+            title="Search Memories"
+            description="Enter a search query to find memories across all agents."
+          />
         ) : isLoading ? (
           <div className="text-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500 mx-auto"></div>
@@ -65,22 +147,53 @@ export default function Memory() {
           <div className="text-center py-12 text-red-500">
             <p>Error: {error.message}</p>
           </div>
-        ) : data?.items.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
-            <p>No memories found for "{searchQuery}"</p>
-          </div>
+        ) : memories.length === 0 ? (
+          <EmptyState
+            icon="brain"
+            title="No memories found"
+            description={`No memories match "${searchQuery}". Try a different search term.`}
+          />
         ) : (
           <>
-            <div className="px-6 py-3 border-b bg-gray-50">
+            <div className="px-6 py-3 border-b bg-gray-50 flex items-center justify-between">
               <p className="text-sm text-gray-600">
-                Found {data?.total} memories
+                Found {totalItems} memories
               </p>
+              <button
+                onClick={toggleSelectAll}
+                className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900"
+              >
+                {selectedIds.size === memories.length ? (
+                  <CheckSquare className="w-4 h-4" />
+                ) : (
+                  <Square className="w-4 h-4" />
+                )}
+                Select All
+              </button>
             </div>
             <div className="divide-y">
-              {data?.items.map((memory) => (
-                <div key={memory.id} className="p-6 hover:bg-gray-50">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
+              {memories.map((memory) => (
+                <div
+                  key={memory.id}
+                  className={`p-6 hover:bg-gray-50 transition-colors ${
+                    selectedIds.has(memory.id) ? 'bg-indigo-50' : ''
+                  }`}
+                >
+                  <div className="flex items-start gap-4">
+                    {/* Checkbox */}
+                    <button
+                      onClick={() => toggleSelect(memory.id)}
+                      className="mt-1 text-gray-400 hover:text-indigo-600"
+                    >
+                      {selectedIds.has(memory.id) ? (
+                        <CheckSquare className="w-5 h-5 text-indigo-600" />
+                      ) : (
+                        <Square className="w-5 h-5" />
+                      )}
+                    </button>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 text-sm text-gray-500 mb-2">
                         <User className="w-4 h-4" />
                         <span>{memory.agent_name}</span>
@@ -89,40 +202,75 @@ export default function Memory() {
                           {memory.memory_type}
                         </span>
                       </div>
-                      <p className="text-gray-900">{memory.content}</p>
+                      <p className="text-gray-900 line-clamp-3">{memory.content}</p>
                       <div className="flex items-center gap-2 text-xs text-gray-400 mt-2">
                         <Clock className="w-3 h-3" />
                         {format(new Date(memory.created_at), 'PPpp')}
                       </div>
                     </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setSelectedMemory(memory)}
+                        className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded transition-colors"
+                        title="View Details"
+                      >
+                        <Eye className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => setDeletingMemory(memory)}
+                        className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
-            {data && data.pages > 1 && (
-              <div className="px-6 py-4 border-t flex items-center justify-between">
-                <button
-                  onClick={() => setPage(p => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="px-3 py-1 border rounded text-sm disabled:opacity-50"
-                >
-                  Previous
-                </button>
-                <span className="text-sm text-gray-600">
-                  Page {page} of {data.pages}
-                </span>
-                <button
-                  onClick={() => setPage(p => Math.min(data.pages, p + 1))}
-                  disabled={page === data.pages}
-                  className="px-3 py-1 border rounded text-sm disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
-            )}
+            <Pagination
+              currentPage={page}
+              totalPages={totalPages}
+              totalItems={totalItems}
+              pageSize={20}
+              onPageChange={setPage}
+            />
           </>
         )}
       </div>
+
+      {/* Memory Detail Modal */}
+      <MemoryModal
+        isOpen={!!selectedMemory}
+        onClose={() => setSelectedMemory(null)}
+        memory={selectedMemory}
+      />
+
+      {/* Delete Confirmation */}
+      <ConfirmDialog
+        isOpen={!!deletingMemory}
+        onClose={() => setDeletingMemory(null)}
+        onConfirm={handleDelete}
+        title="Delete Memory"
+        message="Are you sure you want to delete this memory? This action cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        isLoading={deleteMemory.isPending}
+      />
+
+      {/* Bulk Delete Confirmation */}
+      <ConfirmDialog
+        isOpen={showBulkDelete}
+        onClose={() => setShowBulkDelete(false)}
+        onConfirm={handleBulkDelete}
+        title="Delete Selected Memories"
+        message={`Are you sure you want to delete ${selectedIds.size} memories? This action cannot be undone.`}
+        confirmLabel={`Delete ${selectedIds.size} Memories`}
+        variant="danger"
+        isLoading={bulkDelete.isPending}
+      />
     </div>
   );
 }

@@ -446,3 +446,327 @@ class AdminService:
         except Exception:
             # Audit module may not have tables created yet
             return []
+
+    # =========================================================================
+    # Agent CRUD Operations
+    # =========================================================================
+
+    async def create_agent(
+        self,
+        name: str,
+        slug: str,
+        description: str | None = None,
+        status: str = "active",
+        account_id: UUID | None = None,
+    ) -> AgentSummary:
+        """Create a new agent."""
+        from nexus.identity.models import Agent, AgentStatus
+
+        agent = Agent(
+            name=name,
+            slug=slug,
+            description=description,
+            status=AgentStatus(status),
+            account_id=account_id,
+        )
+        self.db.add(agent)
+        await self.db.commit()
+        await self.db.refresh(agent)
+
+        return AgentSummary(
+            id=agent.id,
+            name=agent.name,
+            slug=agent.slug,
+            status=agent.status.value,
+            capabilities_count=0,
+            memories_count=0,
+            created_at=agent.created_at,
+            last_seen=None,
+        )
+
+    async def get_agent(self, agent_id: UUID) -> dict | None:
+        """Get agent details by ID."""
+        from nexus.discovery.models import Capability
+        from nexus.identity.models import Agent, APIKey
+        from nexus.memory.models import Memory
+
+        stmt = select(Agent).where(Agent.id == agent_id)
+        result = await self.db.execute(stmt)
+        agent = result.scalar_one_or_none()
+
+        if not agent:
+            return None
+
+        # Get counts
+        caps_count = (
+            await self.db.execute(
+                select(func.count()).select_from(Capability).where(Capability.agent_id == agent_id)
+            )
+        ).scalar() or 0
+
+        mems_count = (
+            await self.db.execute(
+                select(func.count()).select_from(Memory).where(Memory.agent_id == agent_id)
+            )
+        ).scalar() or 0
+
+        # Get API key prefix if exists
+        key_result = await self.db.execute(
+            select(APIKey.key_prefix).where(APIKey.agent_id == agent_id).limit(1)
+        )
+        key_prefix = key_result.scalar_one_or_none()
+
+        return {
+            "id": agent.id,
+            "name": agent.name,
+            "slug": agent.slug,
+            "description": agent.description,
+            "status": agent.status.value if hasattr(agent.status, 'value') else str(agent.status),
+            "capabilities_count": caps_count,
+            "memories_count": mems_count,
+            "created_at": agent.created_at,
+            "last_seen": None,
+            "api_key_prefix": key_prefix,
+        }
+
+    async def update_agent(
+        self,
+        agent_id: UUID,
+        updates: dict,
+    ) -> dict | None:
+        """Update an agent."""
+        from nexus.identity.models import Agent, AgentStatus
+
+        stmt = select(Agent).where(Agent.id == agent_id)
+        result = await self.db.execute(stmt)
+        agent = result.scalar_one_or_none()
+
+        if not agent:
+            return None
+
+        for key, value in updates.items():
+            if value is not None:
+                if key == "status":
+                    setattr(agent, key, AgentStatus(value))
+                else:
+                    setattr(agent, key, value)
+
+        await self.db.commit()
+        await self.db.refresh(agent)
+
+        return await self.get_agent(agent_id)
+
+    async def delete_agent(self, agent_id: UUID) -> bool:
+        """Delete an agent."""
+        from nexus.identity.models import Agent
+
+        stmt = select(Agent).where(Agent.id == agent_id)
+        result = await self.db.execute(stmt)
+        agent = result.scalar_one_or_none()
+
+        if not agent:
+            return False
+
+        await self.db.delete(agent)
+        await self.db.commit()
+        return True
+
+    # =========================================================================
+    # Team CRUD Operations
+    # =========================================================================
+
+    async def create_team(
+        self,
+        name: str,
+        slug: str,
+        owner_agent_id: UUID,
+        description: str | None = None,
+    ) -> TeamSummary:
+        """Create a new team."""
+        from nexus.teams.models import Team, TeamMember, TeamRole
+
+        team = Team(
+            name=name,
+            slug=slug,
+            description=description,
+            owner_agent_id=owner_agent_id,
+        )
+        self.db.add(team)
+        await self.db.flush()
+
+        # Add owner as team member
+        member = TeamMember(
+            team_id=team.id,
+            agent_id=owner_agent_id,
+            role=TeamRole.OWNER,
+        )
+        self.db.add(member)
+        await self.db.commit()
+        await self.db.refresh(team)
+
+        return TeamSummary(
+            id=team.id,
+            name=team.name,
+            slug=team.slug,
+            member_count=1,
+            created_at=team.created_at,
+        )
+
+    async def get_team(self, team_id: UUID) -> dict | None:
+        """Get team details by ID."""
+        from nexus.identity.models import Agent
+        from nexus.teams.models import Team, TeamMember
+
+        stmt = select(Team).where(Team.id == team_id)
+        result = await self.db.execute(stmt)
+        team = result.scalar_one_or_none()
+
+        if not team:
+            return None
+
+        # Get members with agent info
+        members_stmt = (
+            select(TeamMember, Agent.name.label("agent_name"), Agent.slug.label("agent_slug"))
+            .join(Agent, TeamMember.agent_id == Agent.id)
+            .where(TeamMember.team_id == team_id)
+        )
+        members_result = await self.db.execute(members_stmt)
+        members = [
+            {
+                "agent_id": str(m.agent_id),
+                "agent_name": agent_name,
+                "agent_slug": agent_slug,
+                "role": m.role.value,
+                "joined_at": m.joined_at.isoformat(),
+            }
+            for m, agent_name, agent_slug in members_result.all()
+        ]
+
+        return {
+            "id": team.id,
+            "name": team.name,
+            "slug": team.slug,
+            "description": team.description,
+            "owner_agent_id": team.owner_agent_id,
+            "member_count": len(members),
+            "members": members,
+            "created_at": team.created_at,
+        }
+
+    async def update_team(
+        self,
+        team_id: UUID,
+        updates: dict,
+    ) -> dict | None:
+        """Update a team."""
+        from nexus.teams.models import Team
+
+        stmt = select(Team).where(Team.id == team_id)
+        result = await self.db.execute(stmt)
+        team = result.scalar_one_or_none()
+
+        if not team:
+            return None
+
+        for key, value in updates.items():
+            if value is not None:
+                setattr(team, key, value)
+
+        await self.db.commit()
+        await self.db.refresh(team)
+
+        return await self.get_team(team_id)
+
+    async def delete_team(self, team_id: UUID) -> bool:
+        """Delete a team."""
+        from nexus.teams.models import Team
+
+        stmt = select(Team).where(Team.id == team_id)
+        result = await self.db.execute(stmt)
+        team = result.scalar_one_or_none()
+
+        if not team:
+            return False
+
+        await self.db.delete(team)
+        await self.db.commit()
+        return True
+
+    async def add_team_member(
+        self,
+        team_id: UUID,
+        agent_id: UUID,
+        role: str = "member",
+    ) -> bool:
+        """Add a member to a team."""
+        from nexus.teams.models import TeamMember, TeamRole
+
+        # Check if already a member
+        stmt = select(TeamMember).where(
+            TeamMember.team_id == team_id,
+            TeamMember.agent_id == agent_id,
+        )
+        result = await self.db.execute(stmt)
+        if result.scalar_one_or_none():
+            return False  # Already a member
+
+        member = TeamMember(
+            team_id=team_id,
+            agent_id=agent_id,
+            role=TeamRole(role),
+        )
+        self.db.add(member)
+        await self.db.commit()
+        return True
+
+    async def remove_team_member(
+        self,
+        team_id: UUID,
+        agent_id: UUID,
+    ) -> bool:
+        """Remove a member from a team."""
+        from nexus.teams.models import TeamMember
+
+        stmt = select(TeamMember).where(
+            TeamMember.team_id == team_id,
+            TeamMember.agent_id == agent_id,
+        )
+        result = await self.db.execute(stmt)
+        member = result.scalar_one_or_none()
+
+        if not member:
+            return False
+
+        await self.db.delete(member)
+        await self.db.commit()
+        return True
+
+    # =========================================================================
+    # Memory Operations
+    # =========================================================================
+
+    async def delete_memory(self, memory_id: UUID) -> bool:
+        """Delete a memory."""
+        from nexus.memory.models import Memory
+
+        stmt = select(Memory).where(Memory.id == memory_id)
+        result = await self.db.execute(stmt)
+        memory = result.scalar_one_or_none()
+
+        if not memory:
+            return False
+
+        await self.db.delete(memory)
+        await self.db.commit()
+        return True
+
+    async def bulk_delete_memories(self, memory_ids: list[UUID]) -> int:
+        """Delete multiple memories. Returns count deleted."""
+        from nexus.memory.models import Memory
+
+        deleted = 0
+        for memory_id in memory_ids:
+            if await self.delete_memory(memory_id):
+                deleted += 1
+
+        return deleted

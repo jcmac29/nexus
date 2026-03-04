@@ -1,6 +1,18 @@
-import { Save, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
+import { Save, RefreshCw, AlertCircle, CheckCircle, Info } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useSettings, useUpdateSettings } from '../hooks/useApi';
+import { useToast } from '../components/Toast';
+
+const featureDescriptions: Record<string, string> = {
+  graph_memory: 'Enable graph-based memory storage for semantic relationships',
+  webhooks: 'Allow agents to receive webhook notifications for events',
+  federation: 'Enable federation with other Nexus instances',
+  marketplace: 'Access the capability marketplace for sharing agent skills',
+};
+
+function getFeatureDescription(feature: string): string {
+  return featureDescriptions[feature] || `Enable the ${feature.replace(/_/g, ' ')} feature`;
+}
 
 export default function Settings() {
   const { data: serverSettings, isLoading, error, refetch } = useSettings();
@@ -15,6 +27,7 @@ export default function Settings() {
   });
 
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const { showToast } = useToast();
 
   // Sync server settings to local state
   useEffect(() => {
@@ -34,9 +47,11 @@ export default function Settings() {
     try {
       await updateSettings.mutateAsync(settings);
       setSaveStatus('saved');
+      showToast('success', 'Settings saved successfully');
       setTimeout(() => setSaveStatus('idle'), 2000);
-    } catch {
+    } catch (error) {
       setSaveStatus('error');
+      showToast('error', error instanceof Error ? error.message : 'Failed to save settings');
       setTimeout(() => setSaveStatus('idle'), 3000);
     }
   };
@@ -179,20 +194,40 @@ export default function Settings() {
         {/* Feature Flags */}
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <h2 className="text-lg font-semibold mb-4">Feature Flags</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Enable or disable platform features. Changes take effect immediately.
+          </p>
           <div className="space-y-4">
             {Object.entries(settings.features).map(([feature, enabled]) => (
-              <label key={feature} className="flex items-center gap-3">
+              <div key={feature} className="flex items-start gap-3 p-3 bg-gray-50 rounded-lg">
                 <input
                   type="checkbox"
                   checked={enabled}
                   onChange={() => toggleFeature(feature)}
-                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                  className="w-4 h-4 mt-0.5 text-indigo-600 rounded focus:ring-indigo-500"
                 />
-                <span className="text-sm text-gray-700">
-                  {feature.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
-                </span>
-              </label>
+                <div>
+                  <span className="text-sm font-medium text-gray-700 block">
+                    {feature.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                  </span>
+                  <span className="text-xs text-gray-500">
+                    {getFeatureDescription(feature)}
+                  </span>
+                </div>
+              </div>
             ))}
+          </div>
+        </div>
+
+        {/* Info Box */}
+        <div className="flex items-start gap-3 p-4 bg-blue-50 rounded-lg border border-blue-200">
+          <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-blue-800">
+            <p className="font-medium">Settings Persistence</p>
+            <p className="mt-1 text-blue-600">
+              Some settings may require a service restart to take full effect.
+              Feature flags are applied immediately for new requests.
+            </p>
           </div>
         </div>
       </div>

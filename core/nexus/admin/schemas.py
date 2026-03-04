@@ -74,6 +74,40 @@ class AgentSummary(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AgentCreate(BaseModel):
+    """Create agent request."""
+
+    name: str = Field(min_length=1, max_length=100)
+    slug: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9-]+$")
+    description: str | None = None
+    status: str = "active"
+
+
+class AgentUpdate(BaseModel):
+    """Update agent request."""
+
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = None
+    status: str | None = None
+
+
+class AgentDetail(BaseModel):
+    """Detailed agent info."""
+
+    id: UUID
+    name: str
+    slug: str
+    description: str | None
+    status: str
+    capabilities_count: int
+    memories_count: int
+    created_at: datetime
+    last_seen: datetime | None
+    api_key_prefix: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
 class TeamSummary(BaseModel):
     """Team summary for admin listing."""
 
@@ -81,6 +115,44 @@ class TeamSummary(BaseModel):
     name: str
     slug: str
     member_count: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TeamCreate(BaseModel):
+    """Create team request."""
+
+    name: str = Field(min_length=1, max_length=100)
+    slug: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9-]+$")
+    description: str | None = None
+    owner_agent_id: UUID
+
+
+class TeamUpdate(BaseModel):
+    """Update team request."""
+
+    name: str | None = Field(None, min_length=1, max_length=100)
+    description: str | None = None
+
+
+class TeamMemberAdd(BaseModel):
+    """Add team member request."""
+
+    agent_id: UUID
+    role: str = "member"
+
+
+class TeamDetail(BaseModel):
+    """Detailed team info."""
+
+    id: UUID
+    name: str
+    slug: str
+    description: str | None
+    owner_agent_id: UUID
+    member_count: int
+    members: list[dict]
     created_at: datetime
 
     model_config = {"from_attributes": True}
