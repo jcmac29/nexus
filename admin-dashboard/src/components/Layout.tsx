@@ -9,8 +9,10 @@ import {
   Settings,
   Menu,
   X,
+  LogOut,
 } from 'lucide-react';
 import { useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
 
 const navItems = [
   { to: '/dashboard', icon: LayoutDashboard, label: 'Dashboard' },
@@ -24,6 +26,11 @@ const navItems = [
 
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const { user, logout } = useAuth();
+
+  const handleLogout = () => {
+    logout();
+  };
 
   return (
     <div className="min-h-screen flex">
@@ -75,6 +82,30 @@ export default function Layout() {
             </NavLink>
           ))}
         </nav>
+
+        {/* User section at bottom */}
+        <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-800">
+          <div className="flex items-center gap-3 px-4 py-2">
+            <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
+              {user?.name?.charAt(0).toUpperCase() || 'A'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-white truncate">
+                {user?.name || 'Admin'}
+              </p>
+              <p className="text-xs text-gray-400 truncate">
+                {user?.email || ''}
+              </p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="p-2 text-gray-400 hover:text-white hover:bg-gray-800 rounded-lg transition-colors"
+              title="Sign out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </aside>
 
       {/* Main content */}
@@ -89,9 +120,9 @@ export default function Layout() {
           </button>
           <div className="flex-1" />
           <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600">Admin</span>
+            <span className="text-sm text-gray-600">{user?.name || 'Admin'}</span>
             <div className="w-8 h-8 bg-indigo-600 rounded-full flex items-center justify-center text-white text-sm font-medium">
-              A
+              {user?.name?.charAt(0).toUpperCase() || 'A'}
             </div>
           </div>
         </header>

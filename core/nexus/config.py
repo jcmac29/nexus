@@ -73,6 +73,16 @@ class Settings(BaseSettings):
     feature_federation: bool = True
     feature_marketplace: bool = True
 
+    # Admin Authentication
+    admin_jwt_secret: str = "change-me-admin-jwt-secret-minimum-32-chars"
+    admin_token_expire_hours: int = 24
+    admin_email: str | None = None  # Initial admin email (created on startup)
+    admin_password: str | None = None  # Initial admin password
+
+    # Frontend URLs (for CORS)
+    admin_dashboard_url: str = "http://localhost:3001"
+    landing_url: str = "http://localhost:3000"
+
 
 @lru_cache
 def get_settings() -> Settings:

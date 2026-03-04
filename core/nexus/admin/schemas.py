@@ -1,0 +1,144 @@
+"""Admin API schemas."""
+
+from datetime import datetime
+from uuid import UUID
+
+from pydantic import BaseModel, EmailStr, Field
+
+from nexus.admin.models import AdminRole
+
+
+# Auth schemas
+class LoginRequest(BaseModel):
+    """Login request with email and password."""
+
+    email: EmailStr
+    password: str = Field(min_length=8)
+
+
+class LoginResponse(BaseModel):
+    """Login response with tokens."""
+
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    expires_in: int  # seconds
+
+
+class RefreshRequest(BaseModel):
+    """Token refresh request."""
+
+    refresh_token: str
+
+
+class AdminUserResponse(BaseModel):
+    """Admin user info response."""
+
+    id: UUID
+    email: str
+    name: str
+    role: AdminRole
+    account_id: UUID | None
+    is_active: bool
+    created_at: datetime
+    last_login: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+# Dashboard stats schemas
+class DashboardStats(BaseModel):
+    """Dashboard statistics."""
+
+    total_agents: int
+    active_agents: int
+    total_memories: int
+    total_teams: int
+    total_capabilities: int
+    api_calls_today: int
+    api_calls_this_month: int
+
+
+class AgentSummary(BaseModel):
+    """Agent summary for admin listing."""
+
+    id: UUID
+    name: str
+    slug: str
+    status: str
+    capabilities_count: int
+    memories_count: int
+    created_at: datetime
+    last_seen: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class TeamSummary(BaseModel):
+    """Team summary for admin listing."""
+
+    id: UUID
+    name: str
+    slug: str
+    member_count: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class MemorySearchResult(BaseModel):
+    """Memory search result."""
+
+    id: UUID
+    agent_id: UUID
+    agent_name: str
+    content: str
+    memory_type: str
+    created_at: datetime
+    relevance_score: float | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class ActivityItem(BaseModel):
+    """Recent activity item."""
+
+    id: UUID
+    type: str  # agent_created, memory_stored, capability_invoked, etc.
+    description: str
+    agent_id: UUID | None
+    agent_name: str | None
+    timestamp: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class InstanceSettings(BaseModel):
+    """Instance-level settings."""
+
+    instance_name: str
+    allow_registration: bool
+    require_email_verification: bool
+    default_rate_limit: int
+    features: dict
+
+
+class InstanceSettingsUpdate(BaseModel):
+    """Update instance settings."""
+
+    instance_name: str | None = None
+    allow_registration: bool | None = None
+    require_email_verification: bool | None = None
+    default_rate_limit: int | None = None
+    features: dict | None = None
+
+
+# Pagination
+class PaginatedResponse(BaseModel):
+    """Generic paginated response."""
+
+    items: list
+    total: int
+    page: int
+    page_size: int
+    pages: int

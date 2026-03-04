@@ -1,16 +1,78 @@
-import { Save } from 'lucide-react';
-import { useState } from 'react';
+import { Save, RefreshCw, AlertCircle, CheckCircle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useSettings, useUpdateSettings } from '../hooks/useApi';
 
 export default function Settings() {
+  const { data: serverSettings, isLoading, error, refetch } = useSettings();
+  const updateSettings = useUpdateSettings();
+
   const [settings, setSettings] = useState({
-    instanceName: 'My Nexus',
-    publicUrl: 'https://nexus.example.com',
-    allowRegistration: true,
-    allowFederation: true,
-    requireApproval: false,
-    maxMemoriesPerAgent: 10000,
-    maxMediaSizeMB: 100,
+    instance_name: '',
+    allow_registration: true,
+    require_email_verification: false,
+    default_rate_limit: 100,
+    features: {} as Record<string, boolean>,
   });
+
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  // Sync server settings to local state
+  useEffect(() => {
+    if (serverSettings) {
+      setSettings({
+        instance_name: serverSettings.instance_name,
+        allow_registration: serverSettings.allow_registration,
+        require_email_verification: serverSettings.require_email_verification,
+        default_rate_limit: serverSettings.default_rate_limit,
+        features: serverSettings.features,
+      });
+    }
+  }, [serverSettings]);
+
+  const handleSave = async () => {
+    setSaveStatus('saving');
+    try {
+      await updateSettings.mutateAsync(settings);
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    }
+  };
+
+  const toggleFeature = (feature: string) => {
+    setSettings({
+      ...settings,
+      features: {
+        ...settings.features,
+        [feature]: !settings.features[feature],
+      },
+    });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-indigo-500"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <AlertCircle className="w-12 h-12 mx-auto text-red-500 mb-4" />
+        <p className="text-red-500">Failed to load settings</p>
+        <button
+          onClick={() => refetch()}
+          className="mt-4 px-4 py-2 border rounded-lg hover:bg-gray-50"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -19,10 +81,31 @@ export default function Settings() {
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           <p className="text-gray-600 mt-1">Configure your Nexus instance</p>
         </div>
-        <button className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors">
-          <Save className="w-4 h-4" />
-          Save Changes
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => refetch()}
+            className="flex items-center gap-2 px-4 py-2 border rounded-lg hover:bg-gray-50"
+          >
+            <RefreshCw className="w-4 h-4" />
+            Refresh
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saveStatus === 'saving'}
+            className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
+          >
+            {saveStatus === 'saving' ? (
+              <RefreshCw className="w-4 h-4 animate-spin" />
+            ) : saveStatus === 'saved' ? (
+              <CheckCircle className="w-4 h-4" />
+            ) : saveStatus === 'error' ? (
+              <AlertCircle className="w-4 h-4" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved!' : saveStatus === 'error' ? 'Error' : 'Save Changes'}
+          </button>
+        </div>
       </div>
 
       <div className="grid gap-6 max-w-2xl">
@@ -36,22 +119,25 @@ export default function Settings() {
               </label>
               <input
                 type="text"
-                value={settings.instanceName}
+                value={settings.instance_name}
                 onChange={(e) =>
-                  setSettings({ ...settings, instanceName: e.target.value })
+                  setSettings({ ...settings, instance_name: e.target.value })
                 }
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Public URL
+                Default Rate Limit (requests/minute)
               </label>
               <input
-                type="url"
-                value={settings.publicUrl}
+                type="number"
+                value={settings.default_rate_limit}
                 onChange={(e) =>
-                  setSettings({ ...settings, publicUrl: e.target.value })
+                  setSettings({
+                    ...settings,
+                    default_rate_limit: parseInt(e.target.value) || 100,
+                  })
                 }
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
               />
@@ -66,9 +152,9 @@ export default function Settings() {
             <label className="flex items-center gap-3">
               <input
                 type="checkbox"
-                checked={settings.allowRegistration}
+                checked={settings.allow_registration}
                 onChange={(e) =>
-                  setSettings({ ...settings, allowRegistration: e.target.checked })
+                  setSettings({ ...settings, allow_registration: e.target.checked })
                 }
                 className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
               />
@@ -77,66 +163,36 @@ export default function Settings() {
             <label className="flex items-center gap-3">
               <input
                 type="checkbox"
-                checked={settings.requireApproval}
+                checked={settings.require_email_verification}
                 onChange={(e) =>
-                  setSettings({ ...settings, requireApproval: e.target.checked })
+                  setSettings({ ...settings, require_email_verification: e.target.checked })
                 }
                 className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
               />
               <span className="text-sm text-gray-700">
-                Require approval for new registrations
+                Require email verification
               </span>
-            </label>
-            <label className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                checked={settings.allowFederation}
-                onChange={(e) =>
-                  setSettings({ ...settings, allowFederation: e.target.checked })
-                }
-                className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-              />
-              <span className="text-sm text-gray-700">Allow federation connections</span>
             </label>
           </div>
         </div>
 
-        {/* Limits */}
+        {/* Feature Flags */}
         <div className="bg-white rounded-xl shadow-sm border p-6">
-          <h2 className="text-lg font-semibold mb-4">Limits</h2>
+          <h2 className="text-lg font-semibold mb-4">Feature Flags</h2>
           <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Max Memories per Agent
+            {Object.entries(settings.features).map(([feature, enabled]) => (
+              <label key={feature} className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  checked={enabled}
+                  onChange={() => toggleFeature(feature)}
+                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                />
+                <span className="text-sm text-gray-700">
+                  {feature.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                </span>
               </label>
-              <input
-                type="number"
-                value={settings.maxMemoriesPerAgent}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    maxMemoriesPerAgent: parseInt(e.target.value),
-                  })
-                }
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Max Media Size (MB)
-              </label>
-              <input
-                type="number"
-                value={settings.maxMediaSizeMB}
-                onChange={(e) =>
-                  setSettings({
-                    ...settings,
-                    maxMediaSizeMB: parseInt(e.target.value),
-                  })
-                }
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
+            ))}
           </div>
         </div>
       </div>

@@ -70,6 +70,7 @@ from nexus.goals import routes as goals_routes
 from nexus.context import routes as context_routes
 from nexus.budgets import routes as budgets_routes
 from nexus.vitals import routes as vitals_routes
+from nexus.admin import routes as admin_routes
 
 settings = get_settings()
 
@@ -105,10 +106,23 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS middleware
+# CORS middleware - configure allowed origins
+allowed_origins = [
+    settings.admin_dashboard_url,
+    settings.landing_url,
+]
+if settings.debug:
+    allowed_origins.extend([
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://localhost:8000",
+    ])
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=allowed_origins if not settings.debug else ["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -455,6 +469,12 @@ app.include_router(
 # Vitals (agent health monitoring and performance metrics)
 app.include_router(
     vitals_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# Admin dashboard (authentication and management)
+app.include_router(
+    admin_routes.router,
     prefix=settings.api_prefix,
 )
 
