@@ -46,6 +46,7 @@ class CreditBalance(Base):
     available_balance = Column(Numeric(15, 2), nullable=False, default=0)  # Can spend
     pending_balance = Column(Numeric(15, 2), nullable=False, default=0)    # Earning pending clearance
     reserved_balance = Column(Numeric(15, 2), nullable=False, default=0)   # Reserved for in-progress jobs
+    promotional_balance = Column(Numeric(15, 2), nullable=False, default=0)  # Non-withdrawable promotional credits
 
     # Lifetime stats
     total_purchased = Column(Numeric(15, 2), nullable=False, default=0)
@@ -71,8 +72,18 @@ class CreditBalance(Base):
 
     @property
     def total_balance(self) -> Decimal:
-        """Total balance including pending."""
-        return self.available_balance + self.pending_balance
+        """Total balance including pending and promotional."""
+        return self.available_balance + self.pending_balance + self.promotional_balance
+
+    @property
+    def spendable_balance(self) -> Decimal:
+        """Total balance that can be spent (available + promotional)."""
+        return self.available_balance + self.promotional_balance
+
+    @property
+    def withdrawable_balance(self) -> Decimal:
+        """Balance that can be withdrawn (excludes promotional)."""
+        return self.available_balance
 
     def to_dict(self) -> dict:
         return {
@@ -82,7 +93,10 @@ class CreditBalance(Base):
             "available_balance": float(self.available_balance),
             "pending_balance": float(self.pending_balance),
             "reserved_balance": float(self.reserved_balance),
+            "promotional_balance": float(self.promotional_balance),
             "total_balance": float(self.total_balance),
+            "spendable_balance": float(self.spendable_balance),
+            "withdrawable_balance": float(self.withdrawable_balance),
             "total_earned": float(self.total_earned),
             "total_spent": float(self.total_spent),
             "currency": self.currency,

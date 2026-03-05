@@ -2,6 +2,7 @@
 
 import hashlib
 import secrets
+from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
@@ -82,13 +83,26 @@ class UserService:
         return result.scalar_one_or_none()
 
     async def create_user(self, email: str, password: str, name: str) -> User:
-        """Create a new user."""
+        """Create a new user with $5 promotional credits."""
+        from nexus.credits.service import CreditService
+
         user = User(
             email=email.lower(),
             password_hash=self.hash_password(password),
             name=name,
         )
         self.db.add(user)
+        await self.db.flush()  # Get the user ID before committing
+
+        # Give new user $5 promotional credits (non-withdrawable welcome bonus)
+        credit_service = CreditService(self.db)
+        await credit_service.add_promotional_credits(
+            owner_type="user",
+            owner_id=user.id,
+            amount=Decimal("5.00"),
+            description="Welcome bonus - $5 promotional credit",
+        )
+
         await self.db.commit()
         await self.db.refresh(user)
         return user

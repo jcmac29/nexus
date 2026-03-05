@@ -54,6 +54,7 @@ class CreditService:
                 available_balance=Decimal("0"),
                 pending_balance=Decimal("0"),
                 reserved_balance=Decimal("0"),
+                promotional_balance=Decimal("0"),
             )
             self.session.add(balance)
             await self.session.flush()
@@ -83,30 +84,66 @@ class CreditService:
         description: str = None,
         payment_intent_id: str = None,
         metadata: dict = None,
+        is_promotional: bool = False,
     ) -> CreditTransaction:
-        """Add credits to a balance."""
+        """Add credits to a balance.
+
+        Args:
+            is_promotional: If True, credits are added to promotional_balance
+                           and cannot be withdrawn (only spent on platform).
+        """
         balance = await self.get_or_create_balance(owner_type, owner_id)
 
-        # Update balance
-        balance.available_balance += amount
-        if transaction_type == TransactionType.PURCHASE:
-            balance.total_purchased += amount
-        elif transaction_type == TransactionType.EARNING:
-            balance.total_earned += amount
+        # Update balance - promotional credits go to separate bucket
+        if is_promotional:
+            balance.promotional_balance += amount
+        else:
+            balance.available_balance += amount
+            if transaction_type == TransactionType.PURCHASE:
+                balance.total_purchased += amount
+            elif transaction_type == TransactionType.EARNING:
+                balance.total_earned += amount
 
         # Record transaction
+        tx_metadata = metadata or {}
+        if is_promotional:
+            tx_metadata["is_promotional"] = True
+
         transaction = CreditTransaction(
             balance_id=balance.id,
             transaction_type=transaction_type,
             amount=amount,
-            balance_after=balance.available_balance,
-            description=description or f"Added {amount} credits",
+            balance_after=balance.spendable_balance,
+            description=description or f"Added {amount} credits" + (" (promotional)" if is_promotional else ""),
             payment_intent_id=payment_intent_id,
-            metadata=metadata or {},
+            metadata_=tx_metadata,
         )
         self.session.add(transaction)
 
         return transaction
+
+    async def add_promotional_credits(
+        self,
+        owner_type: str,
+        owner_id: "UUID",
+        amount: Decimal,
+        description: str = None,
+    ) -> CreditTransaction:
+        """Add non-withdrawable promotional credits (e.g., signup bonus).
+
+        Promotional credits:
+        - Can be spent on platform services (hiring AI workers, API usage)
+        - Cannot be withdrawn or converted to cash
+        - Are used after available balance is depleted
+        """
+        return await self.add_credits(
+            owner_type=owner_type,
+            owner_id=owner_id,
+            amount=amount,
+            transaction_type=TransactionType.BONUS,
+            description=description or f"Promotional credit: ${amount}",
+            is_promotional=True,
+        )
 
     async def deduct_credits(
         self,
@@ -118,27 +155,54 @@ class CreditService:
         service_id: "UUID" = None,
         check_balance: bool = True,
     ) -> CreditTransaction:
-        """Deduct credits from a balance."""
+        """Deduct credits from a balance.
+
+        Deduction order:
+        1. First use available_balance (withdrawable credits)
+        2. Then use promotional_balance (non-withdrawable credits)
+        """
         balance = await self.get_or_create_balance(owner_type, owner_id)
 
-        if check_balance and balance.available_balance < amount:
+        total_spendable = balance.available_balance + balance.promotional_balance
+
+        if check_balance and total_spendable < amount:
             raise InsufficientCreditsError(
-                f"Insufficient credits. Available: {balance.available_balance}, Required: {amount}"
+                f"Insufficient credits. Spendable: {total_spendable}, Required: {amount}"
             )
 
-        # Update balance
-        balance.available_balance -= amount
+        # Deduct from available first, then promotional
+        remaining = amount
+        from_available = Decimal("0")
+        from_promotional = Decimal("0")
+
+        if balance.available_balance >= remaining:
+            from_available = remaining
+            balance.available_balance -= remaining
+        else:
+            from_available = balance.available_balance
+            remaining -= balance.available_balance
+            balance.available_balance = Decimal("0")
+
+            from_promotional = remaining
+            balance.promotional_balance -= remaining
+
         balance.total_spent += amount
 
-        # Record transaction
+        # Record transaction with breakdown
+        tx_metadata = {}
+        if from_promotional > 0:
+            tx_metadata["from_promotional"] = float(from_promotional)
+            tx_metadata["from_available"] = float(from_available)
+
         transaction = CreditTransaction(
             balance_id=balance.id,
             transaction_type=TransactionType.USAGE,
             amount=-amount,  # Negative for debit
-            balance_after=balance.available_balance,
+            balance_after=balance.spendable_balance,
             description=description or f"Used {amount} credits",
             job_id=job_id,
             service_id=service_id,
+            metadata_=tx_metadata if tx_metadata else {},
         )
         self.session.add(transaction)
 
@@ -154,6 +218,7 @@ class CreditService:
         """Reserve credits for an in-progress job.
 
         Uses SELECT FOR UPDATE to prevent race conditions.
+        Reserves from available_balance first, then promotional_balance.
         """
         # First get or create balance (without lock)
         balance = await self.get_or_create_balance(owner_type, owner_id)
@@ -166,16 +231,31 @@ class CreditService:
         )
         balance = result.scalar_one()
 
-        if balance.available_balance < amount:
+        total_spendable = balance.available_balance + balance.promotional_balance
+        if total_spendable < amount:
             raise InsufficientCreditsError(
-                f"Insufficient credits. Available: {balance.available_balance}, Required: {amount}"
+                f"Insufficient credits. Spendable: {total_spendable}, Required: {amount}"
             )
 
-        # Move from available to reserved
-        balance.available_balance -= amount
+        # Reserve from available first, then promotional
+        remaining = amount
+        from_available = Decimal("0")
+        from_promotional = Decimal("0")
+
+        if balance.available_balance >= remaining:
+            from_available = remaining
+            balance.available_balance -= remaining
+        else:
+            from_available = balance.available_balance
+            remaining -= balance.available_balance
+            balance.available_balance = Decimal("0")
+
+            from_promotional = remaining
+            balance.promotional_balance -= remaining
+
         balance.reserved_balance += amount
 
-        # Create reservation
+        # Create reservation with breakdown
         reservation = CreditReservation(
             balance_id=balance.id,
             job_id=job_id,
@@ -339,17 +419,26 @@ class CreditService:
         owner_id: "UUID",
         amount: Decimal,
     ) -> CreditTransaction:
-        """Request payout of earnings."""
+        """Request payout of earnings.
+
+        Note: Only available_balance can be withdrawn.
+        Promotional credits cannot be withdrawn.
+        """
         balance = await self.get_or_create_balance(owner_type, owner_id)
 
+        # Only withdrawable balance (excludes promotional credits)
         if balance.available_balance < amount:
-            raise InsufficientCreditsError("Insufficient balance for payout")
+            raise InsufficientCreditsError(
+                f"Insufficient withdrawable balance. "
+                f"Withdrawable: ${balance.available_balance}, Requested: ${amount}. "
+                f"Note: Promotional credits (${balance.promotional_balance}) cannot be withdrawn."
+            )
 
         # Minimum payout
         if amount < Decimal("10.00"):
             raise ValueError("Minimum payout is $10.00")
 
-        # Deduct and record
+        # Deduct and record (only from available, not promotional)
         balance.available_balance -= amount
         balance.total_withdrawn += amount
 
@@ -449,3 +538,15 @@ async def transfer_credits(
         to_owner_type, to_owner_id,
         amount, **kwargs
     )
+
+
+async def add_promotional_credits(
+    session: AsyncSession,
+    owner_type: str,
+    owner_id: "UUID",
+    amount: Decimal,
+    description: str = None,
+) -> CreditTransaction:
+    """Add non-withdrawable promotional credits (signup bonus, etc.)."""
+    service = CreditService(session)
+    return await service.add_promotional_credits(owner_type, owner_id, amount, description)

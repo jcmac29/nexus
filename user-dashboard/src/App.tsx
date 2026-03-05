@@ -12,6 +12,10 @@ import Integrations from './pages/Integrations'
 import Memory from './pages/Memory'
 import Settings from './pages/Settings'
 import GettingStarted from './pages/GettingStarted'
+import Billing from './pages/Billing'
+import Credits from './pages/Credits'
+import Earnings from './pages/Earnings'
+import ApiAccess from './pages/ApiAccess'
 
 export default function App() {
   return (
@@ -27,6 +31,10 @@ export default function App() {
           <Route path="agents" element={<Agents />} />
           <Route path="integrations" element={<Integrations />} />
           <Route path="memory" element={<Memory />} />
+          <Route path="billing" element={<Billing />} />
+          <Route path="credits" element={<Credits />} />
+          <Route path="earnings" element={<Earnings />} />
+          <Route path="api" element={<ApiAccess />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

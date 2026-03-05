@@ -7,6 +7,16 @@ const navItems = [
   { path: '/agents', label: 'My Agents', icon: '🤖' },
   { path: '/integrations', label: 'Integrations', icon: '🔗' },
   { path: '/memory', label: 'Memory', icon: '🧠' },
+  { path: '/api', label: 'API Access', icon: '🔌' },
+]
+
+const financeItems = [
+  { path: '/billing', label: 'Billing & Plans', icon: '💳' },
+  { path: '/credits', label: 'Credits', icon: '🪙' },
+  { path: '/earnings', label: 'Earnings', icon: '💰' },
+]
+
+const bottomItems = [
   { path: '/settings', label: 'Settings', icon: '⚙️' },
 ]
 
@@ -27,7 +37,7 @@ export default function Layout() {
           </div>
         </div>
 
-        <nav className="flex-1 p-4">
+        <nav className="flex-1 p-4 overflow-y-auto">
           <ul className="space-y-1">
             {navItems.map(item => (
               <li key={item.path}>
@@ -48,6 +58,51 @@ export default function Layout() {
               </li>
             ))}
           </ul>
+
+          <div className="mt-6 pt-4 border-t border-gray-800">
+            <p className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider">Finance</p>
+            <ul className="space-y-1">
+              {financeItems.map(item => (
+                <li key={item.path}>
+                  <NavLink
+                    to={item.path}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-colors ${
+                        isActive
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                      }`
+                    }
+                  >
+                    <span className="text-lg">{item.icon}</span>
+                    {item.label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-gray-800">
+            <ul className="space-y-1">
+              {bottomItems.map(item => (
+                <li key={item.path}>
+                  <NavLink
+                    to={item.path}
+                    className={({ isActive }) =>
+                      `flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-colors ${
+                        isActive
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                      }`
+                    }
+                  >
+                    <span className="text-lg">{item.icon}</span>
+                    {item.label}
+                  </NavLink>
+                </li>
+              ))}
+            </ul>
+          </div>
         </nav>
 
         <div className="p-4 border-t border-gray-800">
