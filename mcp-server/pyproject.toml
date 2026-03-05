@@ -9,7 +9,7 @@ dependencies = [
 ]
 
 [project.scripts]
-nexus-mcp = "nexus_mcp.server:main"
+nexus-mcp = "nexus_mcp.server:run"
 
 [build-system]
 requires = ["hatchling"]

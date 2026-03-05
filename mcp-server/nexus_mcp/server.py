@@ -221,6 +221,76 @@ class NexusMCPServer:
                     "required": ["query"]
                 }
             },
+            {
+                "name": "nexus_ai_complete",
+                "description": "Call an AI model (Claude, GPT, etc.) through Nexus",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "message": {
+                            "type": "string",
+                            "description": "Message to send to the AI"
+                        },
+                        "provider": {
+                            "type": "string",
+                            "description": "AI provider (anthropic, openai)",
+                            "enum": ["anthropic", "openai"],
+                            "default": "anthropic"
+                        },
+                        "system_prompt": {
+                            "type": "string",
+                            "description": "System prompt for context"
+                        }
+                    },
+                    "required": ["message"]
+                }
+            },
+            {
+                "name": "nexus_create_gig",
+                "description": "Create a gig for AI workers to complete",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "title": {
+                            "type": "string",
+                            "description": "Gig title"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Detailed description"
+                        },
+                        "required_capabilities": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Capabilities needed"
+                        },
+                        "budget_credits": {
+                            "type": "number",
+                            "description": "Budget in credits"
+                        }
+                    },
+                    "required": ["title", "description"]
+                }
+            },
+            {
+                "name": "nexus_join_swarm",
+                "description": "Join a swarm for multi-agent coordination",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "join_code": {
+                            "type": "string",
+                            "description": "Swarm join code"
+                        },
+                        "capabilities": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Your capabilities"
+                        }
+                    },
+                    "required": ["join_code"]
+                }
+            },
         ]
         return {"tools": tools}
 
@@ -238,6 +308,9 @@ class NexusMCPServer:
             "nexus_get_pending_work": self._get_pending_work,
             "nexus_complete_invocation": self._complete_invocation,
             "nexus_team_search": self._team_search,
+            "nexus_ai_complete": self._ai_complete,
+            "nexus_create_gig": self._create_gig,
+            "nexus_join_swarm": self._join_swarm,
         }
 
         handler = handlers.get(tool_name)
@@ -419,6 +492,42 @@ class NexusMCPServer:
         )
         return response.json()
 
+    async def _ai_complete(self, args: dict) -> dict:
+        """Call an AI model through Nexus LLM router."""
+        response = await self.client.post(
+            "/api/v1/llm/chat",
+            json={
+                "message": args["message"],
+                "provider": args.get("provider", "anthropic"),
+                "system_prompt": args.get("system_prompt"),
+            }
+        )
+        return response.json()
+
+    async def _create_gig(self, args: dict) -> dict:
+        """Create a gig for AI workers."""
+        response = await self.client.post(
+            "/api/v1/gigs",
+            json={
+                "title": args["title"],
+                "description": args["description"],
+                "required_capabilities": args.get("required_capabilities", []),
+                "budget_credits": args.get("budget_credits", 0),
+            }
+        )
+        return response.json()
+
+    async def _join_swarm(self, args: dict) -> dict:
+        """Join a swarm for multi-agent coordination."""
+        response = await self.client.post(
+            "/api/v1/swarm/join",
+            json={
+                "join_code": args["join_code"],
+                "capabilities": args.get("capabilities", []),
+            }
+        )
+        return response.json()
+
     # --- Helpers ---
 
     def _success_response(self, request_id: Any, result: dict) -> dict:
@@ -464,5 +573,10 @@ async def main():
             sys.stdout.flush()
 
 
-if __name__ == "__main__":
+def run():
+    """Entry point for the MCP server."""
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    run()

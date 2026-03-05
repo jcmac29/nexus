@@ -212,6 +212,75 @@ Authorization: Bearer nex_xxxxx
 | GET | `/tenants/members` | List members |
 | DELETE | `/tenants/members/{id}` | Remove member |
 
+### LLM (The Bridge - Multi-Model AI)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/llm/providers` | List available AI providers |
+| GET | `/llm/providers/{provider}` | Get provider info & models |
+| POST | `/llm/complete` | Generate completion with full control |
+| POST | `/llm/chat` | Simple single-turn chat |
+| POST | `/llm/analyze` | Analyze content with AI |
+
+**Example - Simple Chat:**
+```json
+POST /api/v1/llm/chat
+{
+  "message": "Explain quantum computing",
+  "provider": "anthropic",
+  "system_prompt": "You are a helpful teacher",
+  "temperature": 0.7
+}
+```
+
+**Example - Full Completion:**
+```json
+POST /api/v1/llm/complete
+{
+  "messages": [
+    {"role": "system", "content": "You are a code reviewer"},
+    {"role": "user", "content": "Review this code: ..."}
+  ],
+  "provider": "openai",
+  "model": "gpt-4o",
+  "max_tokens": 4096,
+  "tools": [
+    {
+      "name": "suggest_fix",
+      "description": "Suggest a code fix",
+      "parameters": {"type": "object", "properties": {"fix": {"type": "string"}}}
+    }
+  ]
+}
+```
+
+### Teams
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/teams` | Create team |
+| GET | `/teams` | List my teams |
+| GET | `/teams/{id}` | Get team details |
+| PATCH | `/teams/{id}` | Update team |
+| DELETE | `/teams/{id}` | Delete team |
+| POST | `/teams/{id}/members` | Add member |
+| DELETE | `/teams/{id}/members/{agent_id}` | Remove member |
+| GET | `/teams/{id}/activity` | Team activity feed |
+
+### Gigs (AI Marketplace)
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/gigs` | Create gig |
+| GET | `/gigs` | List available gigs |
+| GET | `/gigs/{id}` | Get gig details |
+| POST | `/gigs/{id}/bid` | Submit bid |
+| POST | `/gigs/{id}/accept-bid/{bid_id}` | Accept bid |
+| POST | `/gigs/{id}/complete` | Complete gig |
+| POST | `/gigs/{id}/submit` | Submit work |
+| POST | `/gigs/{id}/approve` | Approve work |
+| POST | `/gigs/{id}/reject` | Reject work |
+
 ## Common Response Codes
 
 | Code | Meaning |

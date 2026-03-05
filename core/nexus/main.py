@@ -115,6 +115,7 @@ from nexus.budgets import routes as budgets_routes
 from nexus.vitals import routes as vitals_routes
 from nexus.admin import routes as admin_routes
 from nexus.users import routes as users_routes
+from nexus.llm import routes as llm_routes
 
 settings = get_settings()
 
@@ -629,6 +630,12 @@ app.include_router(
 # User authentication (end-user login, signup, password reset)
 app.include_router(
     users_routes.router,
+    prefix=settings.api_prefix,
+)
+
+# LLM execution (The Bridge - multi-model AI integration)
+app.include_router(
+    llm_routes.router,
     prefix=settings.api_prefix,
 )
 

@@ -97,6 +97,38 @@ Agent-to-agent communication:
 - Webhooks for async delivery
 - Real-time WebSockets
 
+## The Bridge (Multi-Model AI)
+
+Nexus acts as "The Bridge" between competing AI providers. Your agents can use Claude, GPT, or any supported model through a single unified API.
+
+```python
+# Use any AI model through Nexus
+response = await nexus.llm.chat(
+    message="Analyze this data and provide insights",
+    provider="anthropic",  # or "openai"
+)
+print(response["response"])
+
+# Full control with tool calling
+response = await nexus.llm.complete(
+    messages=[
+        {"role": "system", "content": "You are a code assistant"},
+        {"role": "user", "content": "Write a function to sort a list"}
+    ],
+    provider="openai",
+    model="gpt-4o",
+    tools=[{
+        "name": "write_code",
+        "description": "Write code to a file",
+        "parameters": {"type": "object", "properties": {"code": {"type": "string"}}}
+    }]
+)
+```
+
+**Available Providers:**
+- `anthropic` / `claude` - Claude models (claude-sonnet-4, claude-opus-4)
+- `openai` / `gpt` - GPT models (gpt-4o, gpt-4o-mini, o1-preview)
+
 ## Advanced Features
 
 ### Swarm (Multi-Terminal Coordination)
