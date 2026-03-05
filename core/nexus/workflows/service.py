@@ -96,8 +96,13 @@ class WorkflowService:
         if not workflow:
             return None
 
+        # SECURITY: Whitelist of allowed fields to prevent mass assignment attacks
+        allowed_fields = {
+            "name", "description", "input_schema", "output_schema",
+            "is_active", "config", "timeout_seconds",
+        }
         for key, value in updates.items():
-            if hasattr(workflow, key) and value is not None:
+            if key in allowed_fields and value is not None:
                 setattr(workflow, key, value)
 
         workflow.updated_at = datetime.now(timezone.utc)

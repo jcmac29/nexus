@@ -226,8 +226,13 @@ class ProfileService:
         if kwargs.get("is_default"):
             await self._unset_default_prompts(agent_id, prompt.prompt_type)
 
+        # SECURITY: Whitelist of allowed fields to prevent mass assignment attacks
+        allowed_fields = {
+            "name", "description", "template", "is_default", "is_active",
+            "variables", "metadata",
+        }
         for key, value in kwargs.items():
-            if hasattr(prompt, key) and value is not None:
+            if key in allowed_fields and value is not None:
                 setattr(prompt, key, value)
 
         await self.session.commit()

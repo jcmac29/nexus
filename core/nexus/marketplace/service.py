@@ -81,8 +81,14 @@ class MarketplaceService:
         if not listing:
             return None
 
+        # SECURITY: Whitelist of allowed fields to prevent mass assignment attacks
+        allowed_fields = {
+            "name", "slug", "description", "listing_type", "category",
+            "price_credits", "tags", "documentation_url", "source_url",
+            "status", "metadata",
+        }
         for key, value in updates.items():
-            if hasattr(listing, key) and value is not None:
+            if key in allowed_fields and value is not None:
                 if key == "tags" and isinstance(value, list):
                     value = ",".join(value)
                 setattr(listing, key, value)

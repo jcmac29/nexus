@@ -65,6 +65,14 @@ def db_migrate(
 def db_upgrade(revision: str = "head"):
     """Apply database migrations."""
     import subprocess
+    import re
+
+    # SECURITY: Validate revision parameter to prevent injection attacks
+    # Allowed: 'head', 'base', hex hashes, relative revisions like '-1', '+1'
+    if not re.match(r'^(head|base|[a-f0-9]+|[+-]\d+)$', revision.lower()):
+        console.print(f"[red]Invalid revision format: {revision}[/red]")
+        console.print("Allowed formats: 'head', 'base', hex hash, or relative (e.g., '-1')")
+        raise typer.Exit(1)
 
     console.print(f"[yellow]Upgrading database to {revision}...[/yellow]")
     result = subprocess.run(
@@ -85,6 +93,14 @@ def db_upgrade(revision: str = "head"):
 def db_downgrade(revision: str = "-1"):
     """Rollback database migrations."""
     import subprocess
+    import re
+
+    # SECURITY: Validate revision parameter to prevent injection attacks
+    # Allowed: 'head', 'base', hex hashes, relative revisions like '-1', '+1'
+    if not re.match(r'^(head|base|[a-f0-9]+|[+-]\d+)$', revision.lower()):
+        console.print(f"[red]Invalid revision format: {revision}[/red]")
+        console.print("Allowed formats: 'head', 'base', hex hash, or relative (e.g., '-1')")
+        raise typer.Exit(1)
 
     console.print(f"[yellow]Downgrading database to {revision}...[/yellow]")
     result = subprocess.run(

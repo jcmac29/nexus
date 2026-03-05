@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 from pydantic import BaseModel
@@ -13,6 +14,43 @@ from nexus.identity.models import Agent
 from nexus.storage.service import StorageService
 
 router = APIRouter(prefix="/storage", tags=["storage"])
+
+
+# --- SECURITY: File Upload Validation ---
+
+# Dangerous file extensions that should never be allowed
+BLOCKED_EXTENSIONS = {
+    ".exe", ".dll", ".bat", ".cmd", ".sh", ".ps1", ".vbs",
+    ".js", ".php", ".py", ".rb", ".pl", ".jar", ".war",
+    ".msi", ".scr", ".pif", ".com", ".hta", ".cpl",
+}
+
+
+def validate_file_upload(filename: str, content: bytes) -> None:
+    """
+    Validate file upload for security.
+    Raises HTTPException if file is unsafe.
+    """
+    # Check file extension
+    _, ext = os.path.splitext(filename.lower())
+    if ext in BLOCKED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type '{ext}' is not allowed for security reasons",
+        )
+
+    # Check for script-like content at the start
+    first_bytes = content[:1024].lower()
+    dangerous_patterns = [
+        b"<script", b"<?php", b"#!/", b"<%", b"import ", b"require(",
+        b"eval(", b"exec(", b"system(",
+    ]
+    for pattern in dangerous_patterns:
+        if pattern in first_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail="File appears to contain executable code",
+            )
 
 
 class PresignedUploadRequest(BaseModel):
@@ -53,6 +91,10 @@ async def upload_file(
             status_code=413,
             detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB.",
         )
+
+    # SECURITY: Validate file type and content
+    validate_file_upload(file.filename or "unnamed", contents)
+
     stored_file = await service.upload_file(
         file_data=contents,
         filename=file.filename or "unnamed",

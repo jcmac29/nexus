@@ -86,8 +86,10 @@ class TeamService:
         if not team:
             return None
 
+        # SECURITY: Whitelist of allowed fields to prevent mass assignment attacks
+        allowed_fields = {"name", "description", "settings", "is_active"}
         for key, value in updates.items():
-            if hasattr(team, key) and value is not None:
+            if key in allowed_fields and value is not None:
                 setattr(team, key, value)
 
         team.updated_at = datetime.now(timezone.utc)

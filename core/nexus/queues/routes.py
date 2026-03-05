@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.database import get_db
@@ -19,19 +19,19 @@ router = APIRouter(prefix="/queues", tags=["queues"])
 class CreateQueueRequest(BaseModel):
     name: str
     description: str | None = None
-    max_size: int | None = None
-    max_retries: int = 3
-    visibility_timeout_seconds: int = 300
+    max_size: int | None = Field(default=None, ge=1, le=1000000)
+    max_retries: int = Field(default=3, ge=0, le=100)
+    visibility_timeout_seconds: int = Field(default=300, ge=1, le=43200, description="1 second to 12 hours")
     deduplication_enabled: bool = False
 
 
 class EnqueueRequest(BaseModel):
     payload: dict
-    priority: int = 2  # NORMAL
+    priority: int = Field(default=2, ge=0, le=4, description="Priority 0-4")
     metadata: dict | None = None
-    delay_seconds: int = 0
+    delay_seconds: int = Field(default=0, ge=0, le=900, description="Delay 0-900 seconds")
     dedup_key: str | None = None
-    ttl_seconds: int | None = None
+    ttl_seconds: int | None = Field(default=None, ge=1, le=604800, description="TTL 1 second to 7 days")
 
 
 class CompleteRequest(BaseModel):

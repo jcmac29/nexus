@@ -58,11 +58,33 @@ class EncryptionService:
 
     def __init__(self, key: Optional[str] = None):
         """Initialize encryption service with a key."""
+        import logging
+        logger = logging.getLogger(__name__)
+
         if key is None:
             settings = get_settings()
             key = settings.secret_key
 
-        # Derive a proper Fernet key from the secret
+        # SECURITY: Validate key strength
+        # Fernet requires a 32-byte key. We derive it from the secret,
+        # so the secret should be high-entropy to prevent brute force.
+        if len(key) < 32:
+            logger.warning(
+                "SECURITY WARNING: Encryption secret_key is less than 32 characters. "
+                "This may be vulnerable to brute force attacks. "
+                "Use a cryptographically random key of at least 32 characters."
+            )
+
+        # Check for common weak keys
+        weak_keys = {"secret", "password", "changeme", "nexus-secret-key", "nexus-secret"}
+        if key.lower() in weak_keys or key.lower().startswith("changeme"):
+            logger.error(
+                "SECURITY ERROR: Using a default or weak encryption key. "
+                "Set NEXUS_SECRET_KEY to a cryptographically random value in production!"
+            )
+
+        # Derive a proper Fernet key from the secret using SHA256
+        # Note: For maximum security, the input key should already be high-entropy
         key_bytes = hashlib.sha256(key.encode()).digest()
         self._fernet = Fernet(base64.urlsafe_b64encode(key_bytes))
 

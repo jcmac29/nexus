@@ -3,7 +3,7 @@
 from uuid import UUID
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,7 +31,7 @@ class CreateWorkflowRequest(BaseModel):
     description: str | None = Field(None, description="Workflow description")
     steps: list[WorkflowStepSchema] = Field(default_factory=list, description="Workflow steps")
     input_schema: dict | None = Field(None, description="Expected input schema")
-    timeout_seconds: int = Field(300, description="Total timeout for workflow")
+    timeout_seconds: int = Field(300, ge=1, le=3600, description="Total timeout for workflow (1-3600 seconds)")
 
 
 class UpdateWorkflowRequest(BaseModel):
@@ -105,7 +105,7 @@ async def create_workflow(
 @router.get("", response_model=list[WorkflowResponse])
 async def list_workflows(
     include_public: bool = False,
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=500),
     agent: Agent = Depends(get_current_agent),
     service: WorkflowService = Depends(get_workflow_service),
 ):
@@ -203,7 +203,7 @@ async def run_workflow(
 @router.get("/{workflow_id}/runs", response_model=list[WorkflowRunResponse])
 async def list_workflow_runs(
     workflow_id: UUID,
-    limit: int = 50,
+    limit: int = Query(default=50, ge=1, le=500),
     agent: Agent = Depends(get_current_agent),
     service: WorkflowService = Depends(get_workflow_service),
 ):

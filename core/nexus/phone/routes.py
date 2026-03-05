@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.database import get_db
@@ -32,8 +32,8 @@ class CreateVoiceAgentRequest(BaseModel):
     voice_id: str | None = None
     nexus_agent_id: str | None = None
     available_tools: list[str] | None = None
-    max_call_duration: int = 3600
-    silence_timeout: int = 10
+    max_call_duration: int = Field(default=3600, ge=60, le=14400, description="Max call duration 1-240 minutes")
+    silence_timeout: int = Field(default=10, ge=5, le=60, description="Silence timeout 5-60 seconds")
 
 
 class MakeCallRequest(BaseModel):

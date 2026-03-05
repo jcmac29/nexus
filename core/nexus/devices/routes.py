@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.database import get_db
@@ -36,7 +36,7 @@ class SendCommandRequest(BaseModel):
     command_type: str
     parameters: dict | None = None
     priority: str = "normal"
-    timeout_seconds: int = 30
+    timeout_seconds: int = Field(default=30, ge=1, le=300, description="Command timeout (1-300 seconds)")
 
 
 class TelemetryRequest(BaseModel):

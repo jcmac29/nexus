@@ -220,9 +220,16 @@ async def update_tenant_settings(
             )
 
     # Apply updates
+    # SECURITY: Whitelist of allowed fields to prevent mass assignment attacks
+    allowed_fields = {
+        "subdomain", "custom_domain", "features", "allowed_ip_ranges",
+        "require_2fa", "rate_limit_multiplier", "custom_rate_limits",
+        "data_region", "retention_days",
+    }
     update_data = data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
-        setattr(settings, key, value)
+        if key in allowed_fields:
+            setattr(settings, key, value)
 
     await db.commit()
     await db.refresh(settings)
