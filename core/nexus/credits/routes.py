@@ -44,7 +44,10 @@ class BalanceResponse(BaseModel):
     available_balance: float
     pending_balance: float
     reserved_balance: float
+    promotional_balance: float
     total_balance: float
+    spendable_balance: float
+    withdrawable_balance: float
     total_earned: float
     total_spent: float
     currency: str
@@ -107,7 +110,10 @@ async def get_balance(
         available_balance=float(balance.available_balance),
         pending_balance=float(balance.pending_balance),
         reserved_balance=float(balance.reserved_balance),
+        promotional_balance=float(balance.promotional_balance),
         total_balance=float(balance.total_balance),
+        spendable_balance=float(balance.spendable_balance),
+        withdrawable_balance=float(balance.withdrawable_balance),
         total_earned=float(balance.total_earned),
         total_spent=float(balance.total_spent),
         currency=balance.currency,

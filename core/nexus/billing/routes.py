@@ -596,8 +596,40 @@ async def stripe_webhook(
     # Handle events
     if event.type == "checkout.session.completed":
         session = event.data.object
-        # Create subscription record
-        # This would be handled based on your specific needs
+        # Create subscription record and give promotional credits for first-time paid subscribers
+        customer_id = session.get("customer")
+        subscription_id = session.get("subscription")
+
+        if customer_id and subscription_id:
+            # Find the account by Stripe customer ID
+            account = await service.get_account_by_stripe_customer(customer_id)
+            if account:
+                # Find the user by matching email
+                from nexus.users.models import User
+                from sqlalchemy import select
+
+                result = await service.db.execute(
+                    select(User).where(User.email == account.email.lower())
+                )
+                user = result.scalar_one_or_none()
+
+                if user:
+                    # Give $5 promo credit for first-time paid subscribers
+                    from nexus.credits.service import CreditService
+                    from decimal import Decimal
+
+                    credit_service = CreditService(service.db)
+
+                    # Check if they already have promotional credits (don't give twice)
+                    balance = await credit_service.get_balance("user", user.id)
+                    if not balance or balance.promotional_balance == 0:
+                        await credit_service.add_promotional_credits(
+                            owner_type="user",
+                            owner_id=user.id,
+                            amount=Decimal("5.00"),
+                            description="Welcome bonus - $5 promotional credit for upgrading to paid plan",
+                        )
+                        await service.db.commit()
 
     elif event.type == "customer.subscription.updated":
         subscription = event.data.object
