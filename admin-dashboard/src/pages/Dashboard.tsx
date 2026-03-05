@@ -1,4 +1,4 @@
-import { Bot, Brain, Users, Zap, Globe, Activity } from 'lucide-react';
+import { Bot, Brain, Users, Globe, Activity } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import { useStats, useRecentActivity } from '../hooks/useApi';
 import {
@@ -36,26 +36,26 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatCard
           title="Active Agents"
-          value={statsLoading ? '...' : stats?.agents ?? 0}
+          value={statsLoading ? '...' : stats?.active_agents ?? 0}
           change="+12% this week"
           changeType="positive"
           icon={Bot}
         />
         <StatCard
           title="Total Memories"
-          value={statsLoading ? '...' : stats?.memories ?? 0}
+          value={statsLoading ? '...' : stats?.total_memories ?? 0}
           change="+156 today"
           changeType="positive"
           icon={Brain}
         />
         <StatCard
           title="Teams"
-          value={statsLoading ? '...' : stats?.teams ?? 0}
+          value={statsLoading ? '...' : stats?.total_teams ?? 0}
           icon={Users}
         />
         <StatCard
-          title="Federation Peers"
-          value={statsLoading ? '...' : stats?.federation_peers ?? 0}
+          title="API Calls Today"
+          value={statsLoading ? '...' : stats?.api_calls_today ?? 0}
           icon={Globe}
         />
       </div>

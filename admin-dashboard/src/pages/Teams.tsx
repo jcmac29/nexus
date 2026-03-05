@@ -179,61 +179,6 @@ export default function Teams() {
     },
   ];
 
-  // Custom row render to support expansion
-  const renderRow = (team: Team, index: number, defaultRender: () => React.ReactNode) => (
-    <>
-      {defaultRender()}
-      {expandedTeam === team.id && team.members && (
-        <tr className="bg-gray-50">
-          <td colSpan={columns.length} className="px-6 py-3">
-            <div className="text-sm">
-              <h4 className="font-medium text-gray-700 mb-2">Team Members</h4>
-              {team.members.length === 0 ? (
-                <p className="text-gray-500">No members yet</p>
-              ) : (
-                <ul className="space-y-2">
-                  {team.members.map((member) => (
-                    <li
-                      key={member.agent_id}
-                      className="flex items-center justify-between bg-white rounded-lg px-3 py-2 border border-gray-200"
-                    >
-                      <div>
-                        <span className="font-medium">{member.agent_name}</span>
-                        <span className="text-gray-500 ml-2">@{member.agent_slug}</span>
-                        <span className={`ml-2 px-2 py-0.5 text-xs rounded-full ${
-                          member.role === 'owner'
-                            ? 'bg-purple-100 text-purple-700'
-                            : member.role === 'admin'
-                            ? 'bg-blue-100 text-blue-700'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}>
-                          {member.role}
-                        </span>
-                      </div>
-                      {member.role !== 'owner' && (
-                        <button
-                          onClick={() => setRemovingMember({
-                            teamId: team.id,
-                            agentId: member.agent_id,
-                            agentName: member.agent_name,
-                          })}
-                          className="p-1 text-red-600 hover:text-red-800 hover:bg-red-50 rounded transition-colors"
-                          title="Remove Member"
-                        >
-                          <UserMinus className="w-4 h-4" />
-                        </button>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
-  );
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">

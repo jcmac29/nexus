@@ -1,4 +1,4 @@
-import { Search, Database, User, Clock, Trash2, Eye, CheckSquare, Square } from 'lucide-react';
+import { Search, User, Clock, Trash2, Eye, CheckSquare, Square } from 'lucide-react';
 import { useState } from 'react';
 import { useMemorySearch, useDeleteMemory, useBulkDeleteMemories } from '../hooks/useApi';
 import { format } from 'date-fns';
