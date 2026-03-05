@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from nexus.cache import get_cache
 from nexus.database import get_db
 from nexus.auth import get_current_agent, get_optional_agent
 from nexus.identity.models import Agent
@@ -14,6 +15,42 @@ from nexus.public.models import ApprovalPolicy, PublishStatus, RequestStatus
 from nexus.public.service import PublicMarketplaceService
 
 router = APIRouter(prefix="/public", tags=["public-marketplace"])
+
+
+# --- Rate Limiting ---
+
+
+async def public_discovery_rate_limit(request: Request):
+    """
+    SECURITY: Rate limit public discovery endpoints to prevent scraping and DoS.
+    Limit: 100 requests per minute per IP address.
+    """
+    cache = await get_cache()
+
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    else:
+        client_ip = request.client.host if request.client else "unknown"
+
+    key = f"ratelimit:public:discovery:{client_ip}"
+
+    allowed, current, remaining = await cache.rate_limit_check(
+        key=key,
+        limit=100,  # 100 requests
+        window_seconds=60,  # per minute
+    )
+
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": "Too many requests. Please try again later.",
+                "retry_after": 60,
+            },
+            headers={"Retry-After": "60"},
+        )
 
 
 # --- Schemas ---
@@ -201,6 +238,7 @@ async def discover_capabilities(
     category: str | None = None,
     search: str | None = None,
     session: AsyncSession = Depends(get_db),
+    _: None = Depends(public_discovery_rate_limit),  # SECURITY: Rate limit public endpoint
 ):
     """
     Discover public capabilities.
@@ -217,6 +255,7 @@ async def discover_capabilities(
 async def get_capability(
     published_id: UUID,
     session: AsyncSession = Depends(get_db),
+    _: None = Depends(public_discovery_rate_limit),  # SECURITY: Rate limit public endpoint
 ):
     """Get details of a public capability."""
     service = PublicMarketplaceService(session)
@@ -376,6 +415,7 @@ async def unblock_requester(
 async def get_reputation(
     agent_id: UUID,
     session: AsyncSession = Depends(get_db),
+    _: None = Depends(public_discovery_rate_limit),  # SECURITY: Rate limit public endpoint
 ):
     """Get an agent's public reputation score."""
     service = PublicMarketplaceService(session)
