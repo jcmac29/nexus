@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.auth import get_current_agent
 from nexus.billing.models import UsageType
+from nexus.cache import get_cache
 from nexus.billing.plans import PLANS, PlanType
 from nexus.billing.schemas import (
     AccountCreate,
@@ -33,6 +34,42 @@ from nexus.database import get_db
 from nexus.identity.models import Agent
 
 router = APIRouter(prefix="/billing", tags=["billing"])
+
+
+# --- Rate Limiting ---
+
+
+async def public_endpoint_rate_limit(request: Request):
+    """
+    SECURITY: Rate limit public endpoints to prevent enumeration and DoS.
+    Limit: 60 requests per minute per IP address.
+    """
+    cache = await get_cache()
+
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    else:
+        client_ip = request.client.host if request.client else "unknown"
+
+    key = f"ratelimit:billing:public:{client_ip}"
+
+    allowed, current, remaining = await cache.rate_limit_check(
+        key=key,
+        limit=60,  # 60 requests
+        window_seconds=60,  # per minute
+    )
+
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": "Too many requests. Please try again later.",
+                "retry_after": 60,
+            },
+            headers={"Retry-After": "60"},
+        )
 
 
 # --- Helper Functions ---
@@ -167,7 +204,11 @@ async def get_account(
 # --- Plans Routes ---
 
 @router.get("/plans", response_model=PlansListResponse)
-async def list_plans(account_id: UUID | None = None, service: BillingService = Depends(get_billing_service)):
+async def list_plans(
+    account_id: UUID | None = None,
+    service: BillingService = Depends(get_billing_service),
+    _: None = Depends(public_endpoint_rate_limit),  # SECURITY: Rate limit public endpoint
+):
     """List all available plans."""
     current_plan = "free"
 
@@ -185,7 +226,10 @@ async def list_plans(account_id: UUID | None = None, service: BillingService = D
 
 
 @router.get("/plans/{plan_type}", response_model=PlanResponse)
-async def get_plan(plan_type: str):
+async def get_plan(
+    plan_type: str,
+    _: None = Depends(public_endpoint_rate_limit),  # SECURITY: Rate limit public endpoint
+):
     """Get plan details."""
     try:
         pt = PlanType(plan_type)
