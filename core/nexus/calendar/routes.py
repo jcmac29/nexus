@@ -275,15 +275,19 @@ async def update_event(
         "cancelled": EventStatus.CANCELLED,
     }
 
-    event = await service.update_event(
-        event_id=UUID(event_id),
-        title=request.title,
-        description=request.description,
-        start_time=datetime.fromisoformat(request.start_time) if request.start_time else None,
-        end_time=datetime.fromisoformat(request.end_time) if request.end_time else None,
-        location=request.location,
-        status=status_map.get(request.status) if request.status else None,
-    )
+    try:
+        event = await service.update_event(
+            event_id=UUID(event_id),
+            agent_id=agent.id,
+            title=request.title,
+            description=request.description,
+            start_time=datetime.fromisoformat(request.start_time) if request.start_time else None,
+            end_time=datetime.fromisoformat(request.end_time) if request.end_time else None,
+            location=request.location,
+            status=status_map.get(request.status) if request.status else None,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=403 if "Not authorized" in str(e) else 404, detail=str(e))
 
     return {
         "id": str(event.id),
@@ -300,7 +304,10 @@ async def delete_event(
 ):
     """Delete a calendar event."""
     service = CalendarService(db)
-    await service.delete_event(UUID(event_id))
+    try:
+        await service.delete_event(UUID(event_id), agent.id)
+    except ValueError as e:
+        raise HTTPException(status_code=403 if "Not authorized" in str(e) else 404, detail=str(e))
     return {"status": "deleted"}
 
 

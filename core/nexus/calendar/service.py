@@ -146,6 +146,7 @@ class CalendarService:
     async def update_event(
         self,
         event_id: UUID,
+        agent_id: UUID,
         title: str | None = None,
         description: str | None = None,
         start_time: datetime | None = None,
@@ -160,6 +161,10 @@ class CalendarService:
         event = result.scalar_one_or_none()
         if not event:
             raise ValueError("Event not found")
+
+        # SECURITY: Verify ownership before modification
+        if event.organizer_id != agent_id:
+            raise ValueError("Not authorized to modify this event")
 
         if title is not None:
             event.title = title
@@ -179,15 +184,21 @@ class CalendarService:
         await self.db.refresh(event)
         return event
 
-    async def delete_event(self, event_id: UUID):
+    async def delete_event(self, event_id: UUID, agent_id: UUID):
         """Delete a calendar event."""
         result = await self.db.execute(
             select(CalendarEvent).where(CalendarEvent.id == event_id)
         )
         event = result.scalar_one_or_none()
-        if event:
-            await self.db.delete(event)
-            await self.db.commit()
+        if not event:
+            raise ValueError("Event not found")
+
+        # SECURITY: Verify ownership before deletion
+        if event.organizer_id != agent_id:
+            raise ValueError("Not authorized to delete this event")
+
+        await self.db.delete(event)
+        await self.db.commit()
 
     async def respond_to_event(
         self,
