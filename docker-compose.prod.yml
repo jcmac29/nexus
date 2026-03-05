@@ -1,100 +1,33 @@
+# Nexus Production Stack
+# Usage: docker compose -f docker-compose.prod.yml up -d
+
 version: '3.8'
 
 services:
-  # NOTE: PostgreSQL is now managed by DigitalOcean
-  # Database: nexus-db-do-user-33766907-0.l.db.ondigitalocean.com:25060
-
-  redis:
-    image: redis:7-alpine
-    container_name: nexus-redis
-    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
-    volumes:
-      - nexus_redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - nexus-internal
-    deploy:
-      resources:
-        limits:
-          cpus: '1'
-          memory: 512M
-
-  minio:
-    image: minio/minio:latest
-    container_name: nexus-minio
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    volumes:
-      - nexus_minio_data:/data
-    command: server /data --console-address ":9001"
-    healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - nexus-internal
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 512M
+  # ==========================================================================
+  # Core Services
+  # ==========================================================================
 
   api:
-    build:
-      context: ./core
-      dockerfile: Dockerfile
-    container_name: nexus-api
+    build: ./core
+    restart: unless-stopped
     environment:
-      # Managed PostgreSQL on DigitalOcean
-      DATABASE_URL: postgresql+asyncpg://doadmin:${DO_DB_PASSWORD}@${DO_DB_HOST}:25060/nexus?ssl=require
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
-      SECRET_KEY: ${SECRET_KEY}
-      DEBUG: "false"
-      ENVIRONMENT: production
-      LOG_LEVEL: INFO
-      STORAGE_ENDPOINT: http://minio:9000
-      STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER}
-      STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-      STORAGE_BUCKET: nexus-media
-      # Multi-tenant settings
-      MULTI_TENANT_ENABLED: ${MULTI_TENANT_ENABLED:-false}
-      BASE_DOMAIN: ${BASE_DOMAIN:-localhost}
-      # Stripe (if enabled)
-      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
-      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      # Admin authentication
-      ADMIN_JWT_SECRET: ${ADMIN_JWT_SECRET}
-      ADMIN_TOKEN_EXPIRE_HOURS: ${ADMIN_TOKEN_EXPIRE_HOURS:-24}
-      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
-      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
-      # Frontend URLs (CORS)
-      ADMIN_DASHBOARD_URL: ${ADMIN_DASHBOARD_URL:-http://localhost:3001}
-      LANDING_URL: ${LANDING_URL:-http://localhost:3000}
-    ports:
-      - "8000:8000"
+      - DATABASE_URL=postgresql+asyncpg://nexus:${DB_PASSWORD:-nexus}@db:5432/nexus
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY in .env}
+      - ADMIN_JWT_SECRET=${ADMIN_JWT_SECRET:?Set ADMIN_JWT_SECRET in .env}
+      - STORAGE_ENDPOINT=http://minio:9000
+      - STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY:-nexus}
+      - STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY:?Set STORAGE_SECRET_KEY in .env}
+      - STORAGE_BUCKET=nexus-media
+      - ENVIRONMENT=production
+      - DEBUG=false
+      - LOG_LEVEL=INFO
     depends_on:
+      db:
+        condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
-    networks:
-      - nexus-internal
-      - nexus-public
-    deploy:
-      resources:
-        limits:
-          cpus: '2'
-          memory: 2G
-      restart_policy:
-        condition: on-failure
-        delay: 5s
-        max_attempts: 3
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -102,72 +35,102 @@ services:
       retries: 3
       start_period: 40s
 
+  # ==========================================================================
+  # Frontend Services
+  # ==========================================================================
+
   admin-dashboard:
-    build:
-      context: ./admin-dashboard
-      dockerfile: Dockerfile
-      args:
-        VITE_API_URL: /api/v1
-    container_name: nexus-admin-dashboard
-    networks:
-      - nexus-internal
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 128M
+    build: ./admin-dashboard
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
       interval: 30s
       timeout: 5s
       retries: 3
 
   landing:
-    build:
-      context: ./landing
-      dockerfile: Dockerfile
-    container_name: nexus-landing
-    networks:
-      - nexus-internal
-    deploy:
-      resources:
-        limits:
-          cpus: '0.25'
-          memory: 128M
+    build: ./landing
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
       interval: 30s
       timeout: 5s
       retries: 3
 
+  # ==========================================================================
+  # Reverse Proxy
+  # ==========================================================================
+
   nginx:
     image: nginx:alpine
-    container_name: nexus-nginx
+    restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - ./deploy/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./deploy/nginx/ssl:/etc/nginx/ssl:ro
     depends_on:
       - api
       - admin-dashboard
       - landing
-    networks:
-      - nexus-public
-      - nexus-internal
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
-networks:
-  nexus-internal:
-    driver: bridge
-  nexus-public:
-    driver: bridge
+  # ==========================================================================
+  # Data Services
+  # ==========================================================================
+
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nexus
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-nexus}
+      POSTGRES_DB: nexus
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexus"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${STORAGE_ACCESS_KEY:-nexus}
+      MINIO_ROOT_PASSWORD: ${STORAGE_SECRET_KEY:?Set STORAGE_SECRET_KEY in .env}
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+# ==========================================================================
+# Volumes
+# ==========================================================================
 
 volumes:
-  nexus_redis_data:
-  nexus_minio_data:
+  postgres_data:
+  redis_data:
+  minio_data:
