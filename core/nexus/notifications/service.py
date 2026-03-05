@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import ipaddress
+import logging
 from datetime import datetime
+from urllib.parse import urlparse
 from uuid import UUID
 
 from sqlalchemy import select, and_, or_
@@ -12,6 +15,60 @@ from nexus.notifications.models import (
     Notification, NotificationTemplate, PushDevice, NotificationPreference,
     NotificationChannel, NotificationPriority, NotificationStatus, NotificationCategory
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_webhook_url(url: str | None) -> bool:
+    """
+    Validate webhook URL to prevent SSRF attacks.
+
+    Returns True if URL is safe, False otherwise.
+    """
+    if not url:
+        return False
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+
+    # Must be http or https
+    if parsed.scheme not in ("http", "https"):
+        return False
+
+    # Must have a hostname
+    if not parsed.hostname:
+        return False
+
+    hostname = parsed.hostname.lower()
+
+    # Block localhost and common local hostnames
+    blocked_hosts = {
+        "localhost", "127.0.0.1", "::1", "0.0.0.0",
+        "metadata.google.internal", "169.254.169.254",
+        "metadata.internal", "kubernetes.default",
+    }
+    if hostname in blocked_hosts:
+        logger.warning(f"Blocked webhook to: {hostname}")
+        return False
+
+    # Block private IP ranges
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            logger.warning(f"Blocked webhook to private IP: {hostname}")
+            return False
+    except ValueError:
+        # Not an IP address, it's a hostname
+        pass
+
+    # Block internal-looking hostnames
+    if any(internal in hostname for internal in [".internal", ".local", ".localhost", ".svc.cluster"]):
+        logger.warning(f"Blocked webhook to internal host: {hostname}")
+        return False
+
+    return True
 
 
 class NotificationService:
@@ -53,6 +110,11 @@ class NotificationService:
         expires_at: datetime | None = None,
     ) -> Notification:
         """Send a notification."""
+        # SECURITY: Validate webhook URL at input time
+        if channel == NotificationChannel.WEBHOOK and action_url:
+            if not _validate_webhook_url(action_url):
+                raise ValueError("Invalid action URL for webhook notification")
+
         # Check preferences
         prefs = await self._get_preferences(recipient_id)
         if prefs and not self._should_send(prefs, channel, category):
@@ -152,6 +214,12 @@ class NotificationService:
         """Send notification via webhook."""
         import httpx
         if notification.action_url:
+            # SECURITY: Validate URL to prevent SSRF
+            if not _validate_webhook_url(notification.action_url):
+                notification.status = NotificationStatus.FAILED
+                notification.error_message = "Invalid webhook URL"
+                return
+
             try:
                 async with httpx.AsyncClient() as client:
                     await client.post(

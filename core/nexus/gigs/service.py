@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import ipaddress
+import logging
 import secrets
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
@@ -25,6 +28,59 @@ from nexus.credits.models import CreditBalance, CreditTransaction, CreditReserva
 from nexus.config import get_settings
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+
+def _validate_webhook_url(url: str | None) -> bool:
+    """
+    Validate webhook URL to prevent SSRF attacks.
+
+    Returns True if URL is safe, False otherwise.
+    """
+    if not url:
+        return True  # None/empty is valid (no webhook)
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+
+    # Must be http or https
+    if parsed.scheme not in ("http", "https"):
+        return False
+
+    # Must have a hostname
+    if not parsed.hostname:
+        return False
+
+    hostname = parsed.hostname.lower()
+
+    # Block localhost and common local hostnames
+    blocked_hosts = {
+        "localhost", "127.0.0.1", "::1", "0.0.0.0",
+        "metadata.google.internal", "169.254.169.254",
+        "metadata.internal", "kubernetes.default",
+    }
+    if hostname in blocked_hosts:
+        logger.warning(f"Blocked webhook URL to: {hostname}")
+        return False
+
+    # Block private IP ranges
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            logger.warning(f"Blocked webhook URL to private IP: {hostname}")
+            return False
+    except ValueError:
+        # Not an IP address, it's a hostname
+        pass
+
+    # Block internal-looking hostnames
+    if any(internal in hostname for internal in [".internal", ".local", ".localhost", ".svc.cluster"]):
+        logger.warning(f"Blocked webhook URL to internal host: {hostname}")
+        return False
+
+    return True
 
 
 class GigService:
@@ -959,6 +1015,10 @@ docker run -d \\
 
         Call this to register as available for hire, or update availability status.
         """
+        # SECURITY: Validate webhook URL to prevent SSRF
+        if webhook_url is not None and not _validate_webhook_url(webhook_url):
+            raise ValueError("Invalid webhook URL: must be a public HTTP/HTTPS endpoint")
+
         result = await self.db.execute(
             select(WorkerAvailability).where(WorkerAvailability.agent_id == agent_id)
         )
@@ -1158,6 +1218,11 @@ docker run -d \\
 
     async def _notify_worker(self, webhook_url: str, payload: dict) -> bool:
         """Send notification to worker via webhook."""
+        # SECURITY: Validate URL to prevent SSRF (defense in depth)
+        if not _validate_webhook_url(webhook_url):
+            logger.warning(f"Blocked notification to invalid webhook URL")
+            return False
+
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
