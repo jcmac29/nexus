@@ -266,6 +266,17 @@ async def get_messages(
     """Get messages from a conversation."""
     service = ConversationService(db)
 
+    # SECURITY: Verify agent is a participant before viewing messages
+    conversation = await service.get_conversation(UUID(conversation_id))
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    is_participant = any(
+        p.participant_id == agent.id for p in conversation.participants
+    )
+    if not is_participant:
+        raise HTTPException(status_code=403, detail="Not a participant")
+
     messages = await service.get_messages(
         conversation_id=UUID(conversation_id),
         limit=limit,
@@ -303,6 +314,17 @@ async def add_participant(
     """Add a participant to a conversation."""
     service = ConversationService(db)
 
+    # SECURITY: Verify agent is a participant before adding others
+    conversation = await service.get_conversation(UUID(conversation_id))
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    is_participant = any(
+        p.participant_id == agent.id and p.is_active for p in conversation.participants
+    )
+    if not is_participant:
+        raise HTTPException(status_code=403, detail="Not authorized to add participants")
+
     participant = await service.add_participant(
         conversation_id=UUID(conversation_id),
         participant_id=UUID(request.participant_id),
@@ -328,6 +350,18 @@ async def remove_participant(
 ):
     """Remove a participant from a conversation."""
     service = ConversationService(db)
+
+    # SECURITY: Verify agent is a participant before removing others
+    conversation = await service.get_conversation(UUID(conversation_id))
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    is_participant = any(
+        p.participant_id == agent.id and p.is_active for p in conversation.participants
+    )
+    if not is_participant:
+        raise HTTPException(status_code=403, detail="Not authorized to remove participants")
+
     await service.remove_participant(UUID(conversation_id), UUID(participant_id))
     return {"status": "removed"}
 
@@ -341,13 +375,22 @@ async def update_shared_state(
 ):
     """Update the shared state of a conversation."""
     service = ConversationService(db)
+
+    # SECURITY: Verify agent is a participant before updating state
+    conv = await service.get_conversation(UUID(conversation_id))
+    if not conv:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    is_participant = any(
+        p.participant_id == agent.id and p.is_active for p in conv.participants
+    )
+    if not is_participant:
+        raise HTTPException(status_code=403, detail="Not authorized to update state")
+
     conversation = await service.update_shared_state(
         UUID(conversation_id),
         request.state,
     )
-
-    if not conversation:
-        raise HTTPException(status_code=404, detail="Conversation not found")
 
     return {"shared_state": conversation.shared_state}
 
@@ -362,6 +405,18 @@ async def add_reaction(
 ):
     """Add a reaction to a message."""
     service = ConversationService(db)
+
+    # SECURITY: Verify agent is a participant before adding reactions
+    conversation = await service.get_conversation(UUID(conversation_id))
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    is_participant = any(
+        p.participant_id == agent.id for p in conversation.participants
+    )
+    if not is_participant:
+        raise HTTPException(status_code=403, detail="Not authorized to add reactions")
+
     await service.add_reaction(UUID(message_id), agent.id, request.emoji)
     return {"status": "added"}
 
@@ -387,5 +442,17 @@ async def close_conversation(
 ):
     """Close a conversation."""
     service = ConversationService(db)
+
+    # SECURITY: Verify agent is a participant before closing
+    conversation = await service.get_conversation(UUID(conversation_id))
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+
+    is_participant = any(
+        p.participant_id == agent.id and p.is_active for p in conversation.participants
+    )
+    if not is_participant:
+        raise HTTPException(status_code=403, detail="Not authorized to close this conversation")
+
     await service.close_conversation(UUID(conversation_id), summary)
     return {"status": "closed"}

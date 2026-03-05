@@ -168,6 +168,19 @@ async def mark_as_read(
     db: AsyncSession = Depends(get_db),
 ):
     """Mark a notification as read."""
+    from sqlalchemy import select
+    from nexus.notifications.models import Notification
+
+    # SECURITY: Verify ownership before marking as read
+    result = await db.execute(
+        select(Notification).where(Notification.id == UUID(notification_id))
+    )
+    notification = result.scalar_one_or_none()
+    if not notification:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    if notification.recipient_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this notification")
+
     service = NotificationService(db)
     await service.mark_as_read(UUID(notification_id))
     return {"status": "read"}
@@ -215,6 +228,19 @@ async def unregister_device(
     db: AsyncSession = Depends(get_db),
 ):
     """Unregister a device."""
+    from sqlalchemy import select
+    from nexus.notifications.models import DeviceRegistration
+
+    # SECURITY: Verify ownership before unregistering
+    result = await db.execute(
+        select(DeviceRegistration).where(DeviceRegistration.device_token == device_token)
+    )
+    device = result.scalar_one_or_none()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to unregister this device")
+
     service = NotificationService(db)
     await service.unregister_device(device_token)
     return {"status": "unregistered"}
