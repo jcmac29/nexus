@@ -1141,6 +1141,20 @@
             .footer-bottom { flex-direction: column; gap: 16px; text-align: center; }
         }
     </style>
+    <script>
+        // Configure API URL based on environment
+        // In production, set this to your API domain
+        const API_URL = window.location.hostname === 'localhost'
+            ? 'http://localhost:8000'
+            : window.location.origin.replace(':3000', ':8000');
+
+        // Update all /docs links when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('a[href="/docs"]').forEach(link => {
+                link.href = API_URL + '/docs';
+            });
+        });
+    </script>
 </head>
 <body>
     <div class="bg-gradient"></div>
