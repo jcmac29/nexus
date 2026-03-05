@@ -1,6 +1,9 @@
 """Business logic for capability discovery."""
 
+import ipaddress
+import logging
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from uuid import UUID
 
 from sqlalchemy import delete, or_, select
@@ -9,6 +12,55 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from nexus.discovery.models import Capability, CapabilityStatus
 from nexus.identity.models import Agent, AgentStatus
 from nexus.memory.embeddings import generate_embedding
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_capability_endpoint(url: str | None) -> None:
+    """
+    Validate capability endpoint URL to prevent SSRF attacks.
+
+    Raises ValueError if URL is unsafe.
+    """
+    if not url:
+        return  # None is valid (no endpoint)
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        raise ValueError("Invalid URL format")
+
+    # Must be http or https
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("Endpoint URL must use HTTP or HTTPS")
+
+    # Must have a hostname
+    if not parsed.hostname:
+        raise ValueError("Endpoint URL must have a hostname")
+
+    hostname = parsed.hostname.lower()
+
+    # Block localhost and common local hostnames
+    blocked_hosts = {
+        "localhost", "127.0.0.1", "::1", "0.0.0.0",
+        "metadata.google.internal", "169.254.169.254",
+        "metadata.internal", "kubernetes.default",
+    }
+    if hostname in blocked_hosts:
+        raise ValueError("Endpoint URL cannot point to localhost or internal services")
+
+    # Block private IP ranges
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise ValueError("Endpoint URL cannot point to private or reserved IP addresses")
+    except ValueError:
+        # Not an IP address, it's a hostname
+        pass
+
+    # Block internal-looking hostnames
+    if any(internal in hostname for internal in [".internal", ".local", ".localhost", ".svc.cluster"]):
+        raise ValueError("Endpoint URL cannot point to internal services")
 
 
 class DiscoveryService:
@@ -30,6 +82,9 @@ class DiscoveryService:
         metadata: dict | None = None,
     ) -> Capability:
         """Register or update a capability for an agent."""
+        # SECURITY: Validate endpoint URL to prevent SSRF
+        _validate_capability_endpoint(endpoint_url)
+
         # Check for existing capability
         existing = await self.get_capability_by_name(agent_id, name)
 
@@ -106,6 +161,10 @@ class DiscoveryService:
         status: str | None = None,
     ) -> Capability | None:
         """Update a capability."""
+        # SECURITY: Validate endpoint URL if being updated
+        if endpoint_url is not None:
+            _validate_capability_endpoint(endpoint_url)
+
         capability = await self.get_capability_by_name(agent_id, name)
         if not capability:
             return None

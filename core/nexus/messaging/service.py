@@ -1,8 +1,11 @@
 """Service for agent-to-agent messaging and invocations."""
 
+import ipaddress
+import logging
 from datetime import datetime, timezone
-from uuid import UUID
 from typing import Any
+from urllib.parse import urlparse
+from uuid import UUID
 
 import httpx
 from sqlalchemy import select, and_, or_
@@ -11,6 +14,57 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from nexus.messaging.models import Message, MessageStatus, Invocation, InvocationStatus
 from nexus.identity.models import Agent
 from nexus.discovery.models import Capability
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_endpoint_url(url: str) -> bool:
+    """
+    Validate endpoint URL to prevent SSRF attacks.
+
+    Returns True if URL is safe, False otherwise.
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+
+    # Must be http or https
+    if parsed.scheme not in ("http", "https"):
+        return False
+
+    # Must have a hostname
+    if not parsed.hostname:
+        return False
+
+    hostname = parsed.hostname.lower()
+
+    # Block localhost and common local hostnames
+    blocked_hosts = {
+        "localhost", "127.0.0.1", "::1", "0.0.0.0",
+        "metadata.google.internal", "169.254.169.254",
+        "metadata.internal", "kubernetes.default",
+    }
+    if hostname in blocked_hosts:
+        logger.warning(f"Blocked SSRF attempt to: {hostname}")
+        return False
+
+    # Block private IP ranges
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            logger.warning(f"Blocked SSRF attempt to private IP: {hostname}")
+            return False
+    except ValueError:
+        # Not an IP address, it's a hostname
+        pass
+
+    # Block internal-looking hostnames
+    if any(internal in hostname for internal in [".internal", ".local", ".localhost", ".svc.cluster"]):
+        logger.warning(f"Blocked SSRF attempt to internal host: {hostname}")
+        return False
+
+    return True
 
 
 class MessagingService:
@@ -113,6 +167,11 @@ class MessagingService:
 
         webhook_url = agent.metadata_["webhook_url"]
 
+        # SECURITY: Validate URL to prevent SSRF
+        if not _validate_endpoint_url(webhook_url):
+            logger.warning(f"Invalid webhook URL for agent {agent.id}")
+            return False
+
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 response = await client.post(
@@ -214,6 +273,13 @@ class MessagingService:
         if not capability.endpoint_url:
             return
 
+        # SECURITY: Validate endpoint URL to prevent SSRF
+        if not _validate_endpoint_url(capability.endpoint_url):
+            invocation.status = InvocationStatus.FAILED
+            invocation.error_message = "Invalid endpoint URL"
+            invocation.completed_at = datetime.now(timezone.utc)
+            return
+
         invocation.status = InvocationStatus.PROCESSING
         invocation.started_at = datetime.now(timezone.utc)
         await self.db.flush()
@@ -257,6 +323,14 @@ class MessagingService:
             return
 
         webhook_url = agent.metadata_["webhook_url"]
+
+        # SECURITY: Validate URL to prevent SSRF
+        if not _validate_endpoint_url(webhook_url):
+            invocation.status = InvocationStatus.FAILED
+            invocation.error_message = "Invalid webhook URL"
+            invocation.completed_at = datetime.now(timezone.utc)
+            return
+
         invocation.status = InvocationStatus.PROCESSING
         invocation.started_at = datetime.now(timezone.utc)
         await self.db.flush()
@@ -374,6 +448,10 @@ class MessagingService:
         events: list[str] | None = None,
     ) -> None:
         """Set webhook configuration for an agent."""
+        # SECURITY: Validate URL to prevent SSRF
+        if not _validate_endpoint_url(endpoint_url):
+            raise ValueError("Invalid webhook URL: must be a public HTTPS/HTTP endpoint")
+
         result = await self.db.execute(
             select(Agent).where(Agent.id == agent_id)
         )

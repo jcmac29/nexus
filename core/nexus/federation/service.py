@@ -2,8 +2,11 @@
 
 import hashlib
 import hmac
+import ipaddress
+import logging
 import secrets
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
@@ -16,6 +19,52 @@ from nexus.federation.models import (
     PeerStatus,
     TrustLevel,
 )
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_peer_endpoint(url: str) -> None:
+    """
+    Validate peer endpoint URL to prevent SSRF attacks.
+
+    Raises ValueError if URL is unsafe.
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        raise ValueError("Invalid URL format")
+
+    # Must be https for federation (security requirement)
+    if parsed.scheme != "https":
+        raise ValueError("Federation endpoints must use HTTPS")
+
+    # Must have a hostname
+    if not parsed.hostname:
+        raise ValueError("URL must have a hostname")
+
+    hostname = parsed.hostname.lower()
+
+    # Block localhost and common local hostnames
+    blocked_hosts = {
+        "localhost", "127.0.0.1", "::1", "0.0.0.0",
+        "metadata.google.internal", "169.254.169.254",
+        "metadata.internal", "kubernetes.default",
+    }
+    if hostname in blocked_hosts:
+        raise ValueError("Federation endpoint cannot point to localhost or internal services")
+
+    # Block private IP ranges
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise ValueError("Federation endpoint cannot point to private or reserved IP addresses")
+    except ValueError:
+        # Not an IP address, it's a hostname - check for suspicious patterns
+        pass
+
+    # Block internal-looking hostnames
+    if any(internal in hostname for internal in [".internal", ".local", ".localhost", ".svc.cluster"]):
+        raise ValueError("Federation endpoint cannot point to internal services")
 
 
 class FederationService:
@@ -37,6 +86,9 @@ class FederationService:
         Initiate a peering connection with another Nexus instance.
         Returns the peer record and a secret to share with them.
         """
+        # SECURITY: Validate peer endpoint to prevent SSRF
+        _validate_peer_endpoint(peer_endpoint)
+
         # Generate credentials
         our_peer_id = f"peer_{secrets.token_urlsafe(16)}"
         shared_secret = secrets.token_urlsafe(32)
@@ -69,6 +121,9 @@ class FederationService:
         trust_level: TrustLevel = TrustLevel.STANDARD,
     ) -> FederatedPeer:
         """Accept an incoming peering request."""
+        # SECURITY: Validate peer endpoint to prevent SSRF
+        _validate_peer_endpoint(peer_endpoint)
+
         # Generate our credentials for them
         our_peer_id = f"peer_{secrets.token_urlsafe(16)}"
         our_secret = secrets.token_urlsafe(32)
@@ -265,9 +320,10 @@ class FederationService:
         self,
         peer_id: str,
         signature: str,
+        timestamp: str | None = None,
     ) -> list[dict]:
         """Handle discovery request from a peer."""
-        peer = await self._verify_peer_request(peer_id, signature)
+        peer = await self._verify_peer_request(peer_id, signature, timestamp)
         if not peer:
             return []
 
@@ -293,9 +349,10 @@ class FederationService:
         agent_slug: str,
         capability_name: str,
         input_data: dict,
+        timestamp: str | None = None,
     ) -> dict:
         """Handle invocation request from a peer."""
-        peer = await self._verify_peer_request(peer_id, signature)
+        peer = await self._verify_peer_request(peer_id, signature, timestamp)
         if not peer:
             return {"error": "Invalid peer credentials"}
 
@@ -350,6 +407,7 @@ class FederationService:
         self,
         peer_id: str,
         signature: str,
+        timestamp: str | None = None,
     ) -> FederatedPeer | None:
         """Verify an incoming peer request."""
         result = await self.session.execute(
@@ -363,7 +421,32 @@ class FederationService:
         if not peer:
             return None
 
-        # TODO: Verify signature with timestamp
+        # SECURITY: Verify timestamp to prevent replay attacks
+        if timestamp:
+            try:
+                request_time = int(timestamp)
+                current_time = int(datetime.now(timezone.utc).timestamp())
+                # Allow 5 minute window for clock skew
+                if abs(current_time - request_time) > 300:
+                    logger.warning(f"Rejected peer request with stale timestamp: {peer_id}")
+                    return None
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid timestamp format from peer: {peer_id}")
+                return None
+
+        # SECURITY: Verify HMAC signature
+        if timestamp:
+            message = f"{peer_id}:{timestamp}"
+            expected_signature = hmac.new(
+                peer.our_secret.encode(),
+                message.encode(),
+                hashlib.sha256,
+            ).hexdigest()
+
+            if not hmac.compare_digest(signature, expected_signature):
+                logger.warning(f"Invalid signature from peer: {peer_id}")
+                return None
+
         return peer
 
     async def _log_request(

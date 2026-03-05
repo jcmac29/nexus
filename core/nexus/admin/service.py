@@ -544,8 +544,11 @@ class AdminService:
         if not agent:
             return None
 
+        # SECURITY: Whitelist of allowed fields to prevent mass assignment
+        allowed_fields = {"name", "slug", "description", "status"}
+
         for key, value in updates.items():
-            if value is not None:
+            if value is not None and key in allowed_fields:
                 if key == "status":
                     setattr(agent, key, AgentStatus(value))
                 else:
@@ -668,8 +671,11 @@ class AdminService:
         if not team:
             return None
 
+        # SECURITY: Whitelist of allowed fields to prevent mass assignment
+        allowed_fields = {"name", "slug", "description"}
+
         for key, value in updates.items():
-            if value is not None:
+            if value is not None and key in allowed_fields:
                 setattr(team, key, value)
 
         await self.db.commit()

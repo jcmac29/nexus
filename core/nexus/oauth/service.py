@@ -2,6 +2,7 @@
 
 import secrets
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 from uuid import UUID
 
 import httpx
@@ -79,7 +80,8 @@ class OAuthService:
             params["access_type"] = "offline"
             params["prompt"] = "consent"
 
-        query = "&".join(f"{k}={v}" for k, v in params.items())
+        # SECURITY: Use proper URL encoding to prevent injection
+        query = urlencode(params)
         auth_url = f"{config['auth_url']}?{query}"
 
         return auth_url, state
