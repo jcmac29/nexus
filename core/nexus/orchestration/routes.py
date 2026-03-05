@@ -158,6 +158,13 @@ async def add_step(
     """Add a step to a workflow."""
     service = OrchestrationService(db)
 
+    # SECURITY: Verify ownership before modification
+    workflow = await service.get_workflow(UUID(workflow_id))
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this workflow")
+
     step = await service.add_step(
         workflow_id=UUID(workflow_id),
         name=request.name,
@@ -194,6 +201,10 @@ async def activate_workflow(
 
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # SECURITY: Verify ownership before modification
+    if workflow.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this workflow")
 
     workflow.status = WorkflowStatus.ACTIVE
     await db.commit()
@@ -290,5 +301,13 @@ async def cancel_execution(
 ):
     """Cancel a running execution."""
     service = OrchestrationService(db)
+
+    # SECURITY: Verify the agent triggered this execution
+    execution = await service.get_execution(UUID(execution_id))
+    if not execution:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    if execution.triggered_by != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to cancel this execution")
+
     await service.cancel_execution(UUID(execution_id))
     return {"status": "cancelled"}
