@@ -1,5 +1,6 @@
 """Stripe integration for billing."""
 
+import os
 import stripe
 from typing import Any
 
@@ -11,21 +12,26 @@ settings = get_settings()
 # Configure Stripe
 stripe.api_key = settings.stripe_secret_key if hasattr(settings, 'stripe_secret_key') else None
 
-# Stripe Price IDs (to be configured)
-STRIPE_PRICE_IDS = {
-    PlanType.STARTER: {
-        "monthly": "price_starter_monthly",
-        "annual": "price_starter_annual",
-    },
-    PlanType.PRO: {
-        "monthly": "price_pro_monthly",
-        "annual": "price_pro_annual",
-    },
-    PlanType.BUSINESS: {
-        "monthly": "price_business_monthly",
-        "annual": "price_business_annual",
-    },
-}
+# Stripe Price IDs - loaded from settings
+# Run scripts/setup_stripe.py to create these in your Stripe account
+def _get_price_ids():
+    """Load price IDs from settings."""
+    return {
+        PlanType.STARTER: {
+            "monthly": getattr(settings, 'stripe_price_starter_monthly', None) or "price_starter_monthly",
+            "annual": getattr(settings, 'stripe_price_starter_annual', None) or "price_starter_annual",
+        },
+        PlanType.PRO: {
+            "monthly": getattr(settings, 'stripe_price_pro_monthly', None) or "price_pro_monthly",
+            "annual": getattr(settings, 'stripe_price_pro_annual', None) or "price_pro_annual",
+        },
+        PlanType.BUSINESS: {
+            "monthly": getattr(settings, 'stripe_price_business_monthly', None) or "price_business_monthly",
+            "annual": getattr(settings, 'stripe_price_business_annual', None) or "price_business_annual",
+        },
+    }
+
+STRIPE_PRICE_IDS = _get_price_ids()
 
 
 class StripeClient:
@@ -181,6 +187,139 @@ class StripeClient:
             action="increment",
         )
         return {"id": record.id, "quantity": record.quantity}
+
+    # --- Stripe Connect (for seller payouts) ---
+
+    def create_connect_account(
+        self,
+        email: str,
+        country: str = "US",
+        account_type: str = "express",
+        metadata: dict[str, str] | None = None,
+    ) -> str | None:
+        """Create a Stripe Connect account for a seller."""
+        if not self.enabled:
+            return None
+
+        account = stripe.Account.create(
+            type=account_type,
+            country=country,
+            email=email,
+            capabilities={
+                "card_payments": {"requested": True},
+                "transfers": {"requested": True},
+            },
+            metadata=metadata or {},
+        )
+        return account.id
+
+    def create_connect_onboarding_link(
+        self,
+        account_id: str,
+        return_url: str,
+        refresh_url: str,
+    ) -> str:
+        """Create onboarding link for Connect account."""
+        if not self.enabled:
+            return ""
+
+        link = stripe.AccountLink.create(
+            account=account_id,
+            refresh_url=refresh_url,
+            return_url=return_url,
+            type="account_onboarding",
+        )
+        return link.url
+
+    def create_connect_login_link(self, account_id: str) -> str:
+        """Create login link for Connect Express dashboard."""
+        if not self.enabled:
+            return ""
+
+        link = stripe.Account.create_login_link(account_id)
+        return link.url
+
+    def get_connect_account(self, account_id: str) -> dict[str, Any] | None:
+        """Get Connect account details."""
+        if not self.enabled:
+            return None
+
+        try:
+            account = stripe.Account.retrieve(account_id)
+            return {
+                "id": account.id,
+                "email": account.email,
+                "charges_enabled": account.charges_enabled,
+                "payouts_enabled": account.payouts_enabled,
+                "details_submitted": account.details_submitted,
+                "country": account.country,
+            }
+        except stripe.error.InvalidRequestError:
+            return None
+
+    def create_transfer(
+        self,
+        amount_cents: int,
+        destination_account_id: str,
+        currency: str = "usd",
+        description: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Transfer funds to a Connect account."""
+        if not self.enabled:
+            return {}
+
+        transfer = stripe.Transfer.create(
+            amount=amount_cents,
+            currency=currency,
+            destination=destination_account_id,
+            description=description,
+            metadata=metadata or {},
+        )
+        return {
+            "id": transfer.id,
+            "amount": transfer.amount,
+            "currency": transfer.currency,
+            "destination": transfer.destination,
+        }
+
+    def create_payout(
+        self,
+        account_id: str,
+        amount_cents: int,
+        currency: str = "usd",
+        metadata: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
+        """Create a payout to Connect account's bank."""
+        if not self.enabled:
+            return {}
+
+        payout = stripe.Payout.create(
+            amount=amount_cents,
+            currency=currency,
+            metadata=metadata or {},
+            stripe_account=account_id,
+        )
+        return {
+            "id": payout.id,
+            "amount": payout.amount,
+            "status": payout.status,
+            "arrival_date": payout.arrival_date,
+        }
+
+    def get_connect_balance(self, account_id: str) -> dict[str, Any] | None:
+        """Get balance for a Connect account."""
+        if not self.enabled:
+            return None
+
+        balance = stripe.Balance.retrieve(stripe_account=account_id)
+        available = sum(b.amount for b in balance.available)
+        pending = sum(b.amount for b in balance.pending)
+        return {
+            "available_cents": available,
+            "pending_cents": pending,
+            "currency": balance.available[0].currency if balance.available else "usd",
+        }
 
 
 def construct_webhook_event(

@@ -18,7 +18,7 @@ class CreateSwarmRequest(BaseModel):
 class JoinSwarmRequest(BaseModel):
     """Request to join an existing swarm."""
 
-    join_code: str = Field(..., min_length=6, max_length=6)
+    join_code: str = Field(..., min_length=6, max_length=24)  # Supports 16-char secure codes
     capabilities: list[str] = Field(default_factory=list)
 
 

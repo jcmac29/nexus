@@ -53,12 +53,31 @@ class Settings(BaseSettings):
     stripe_secret_key: str | None = None
     stripe_publishable_key: str | None = None
     stripe_webhook_secret: str | None = None
+    stripe_connect_webhook_secret: str | None = None  # For Connect events
+
+    # Stripe Price IDs (created via scripts/setup_stripe.py)
+    stripe_price_starter_monthly: str | None = None
+    stripe_price_starter_annual: str | None = None
+    stripe_price_pro_monthly: str | None = None
+    stripe_price_pro_annual: str | None = None
+    stripe_price_business_monthly: str | None = None
+    stripe_price_business_annual: str | None = None
 
     # Media Storage (MinIO/S3)
     storage_endpoint: str = "http://minio:9000"
     storage_access_key: str = "nexus"
     storage_secret_key: str = "nexus-secret-key"
     storage_bucket: str = "nexus-media"
+    storage_region: str = "us-east-1"
+
+    # Twilio (SMS)
+    twilio_account_sid: str | None = None
+    twilio_auth_token: str | None = None
+
+    # Feature flags (simple)
+    enable_federation: bool = True
+    enable_marketplace: bool = True
+    enable_devices: bool = True
 
     # Infrastructure Providers (for worker pools)
     digitalocean_token: str | None = None

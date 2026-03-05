@@ -78,7 +78,7 @@ class SwarmService:
         result = await self.db.execute(
             select(Swarm)
             .options(selectinload(Swarm.members))
-            .where(Swarm.join_code == join_code.upper())
+            .where(Swarm.join_code == join_code)  # Join codes are case-sensitive
         )
         return result.scalar_one_or_none()
 

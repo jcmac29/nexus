@@ -20,7 +20,7 @@ async def test_create_swarm(authenticated_client: AsyncClient):
     data = response.json()
     assert data["swarm"]["name"] == "Test Swarm"
     assert "join_code" in data
-    assert len(data["join_code"]) == 6
+    assert len(data["join_code"]) == 16  # 12 bytes = 16 base64 chars for security
     assert data["member"]["role"] == "leader"
 
 

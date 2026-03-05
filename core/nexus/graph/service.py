@@ -101,6 +101,7 @@ class GraphService:
         relationship_types: list[RelationshipType] | None = None,
         limit: int = 100,
         offset: int = 0,
+        agent_id: UUID | None = None,
     ) -> tuple[list[tuple[MemoryRelationship, str]], int]:
         """
         Get all edges connected to a node.
@@ -150,6 +151,7 @@ class GraphService:
         max_depth: int = 2,
         relationship_types: list[RelationshipType] | None = None,
         direction: str = "outgoing",
+        agent_id: UUID | None = None,
     ) -> tuple[list[dict], list[MemoryRelationship]]:
         """
         Traverse the graph from a starting node using recursive CTE.
@@ -242,6 +244,7 @@ class GraphService:
         target_type: NodeType,
         target_id: UUID,
         max_depth: int = 5,
+        agent_id: UUID | None = None,
     ) -> list[MemoryRelationship] | None:
         """
         Find the shortest path between two nodes using BFS via recursive CTE.
@@ -315,6 +318,7 @@ class GraphService:
         relationship_types: list[RelationshipType] | None = None,
         max_depth: int = 1,
         limit: int = 50,
+        agent_id: UUID | None = None,
     ) -> list[dict]:
         """
         Get memories related to a given memory.

@@ -662,3 +662,346 @@ async def stripe_webhook(
         pass
 
     return {"received": True}
+
+
+# --- Seller Account & Payouts (Stripe Connect) ---
+
+@router.get("/seller-account")
+async def get_seller_account(
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get seller account details for current user."""
+    from nexus.billing.models import SellerAccount
+    from sqlalchemy import select
+    from nexus.users.models import User
+
+    # Get user from agent
+    if not hasattr(agent, "user_id") or not agent.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agent not associated with user account",
+        )
+
+    # Get account
+    result = await db.execute(
+        select(SellerAccount).join(Account).where(
+            Account.email == (await db.execute(select(User.email).where(User.id == agent.user_id))).scalar()
+        )
+    )
+    seller = result.scalar_one_or_none()
+
+    if not seller:
+        return None
+
+    return {
+        "id": str(seller.id),
+        "stripe_account_id": seller.stripe_account_id,
+        "stripe_onboarding_complete": seller.stripe_onboarding_complete,
+        "stripe_payouts_enabled": seller.stripe_payouts_enabled,
+        "total_sales": seller.total_sales_cents / 100,
+        "total_fees_paid": seller.total_fees_paid_cents / 100,
+        "total_payouts": seller.total_payouts_cents / 100,
+        "pending_balance": seller.pending_balance_cents / 100,
+        "payout_schedule": seller.payout_schedule,
+        "minimum_payout": seller.minimum_payout_cents / 100,
+    }
+
+
+@router.post("/seller-account/onboard")
+async def onboard_seller(
+    agent: Agent = Depends(get_current_agent),
+    service: BillingService = Depends(get_billing_service),
+    db: AsyncSession = Depends(get_db),
+):
+    """Start Stripe Connect onboarding for seller."""
+    from nexus.billing.models import SellerAccount
+    from nexus.billing.marketplace_service import MarketplaceBillingService
+    from nexus.users.models import User
+    from sqlalchemy import select
+
+    if not hasattr(agent, "user_id") or not agent.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agent not associated with user account",
+        )
+
+    # Get user email
+    result = await db.execute(select(User).where(User.id == agent.user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Get or create account
+    account = await service.get_account_by_email(user.email)
+    if not account:
+        account = await service.create_account(user.email, user.name)
+        await db.commit()
+
+    # Get or create seller account
+    result = await db.execute(
+        select(SellerAccount).where(SellerAccount.account_id == account.id)
+    )
+    seller = result.scalar_one_or_none()
+
+    marketplace_service = MarketplaceBillingService(db)
+
+    if not seller:
+        seller = await marketplace_service.create_seller_account(account.id)
+
+    # Create Stripe Connect account if needed
+    if not seller.stripe_account_id:
+        if stripe_client.enabled:
+            stripe_account_id = stripe_client.create_connect_account(
+                email=user.email,
+                metadata={"account_id": str(account.id)},
+            )
+            seller.stripe_account_id = stripe_account_id
+            await db.commit()
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Stripe is not configured",
+            )
+
+    # Generate onboarding link
+    from nexus.config import get_settings
+    settings = get_settings()
+    return_url = f"{settings.frontend_url}/earnings?onboarding=complete"
+    refresh_url = f"{settings.frontend_url}/earnings?onboarding=refresh"
+
+    onboarding_url = stripe_client.create_connect_onboarding_link(
+        seller.stripe_account_id,
+        return_url=return_url,
+        refresh_url=refresh_url,
+    )
+
+    return {"onboarding_url": onboarding_url}
+
+
+@router.get("/seller-account/dashboard")
+async def get_seller_dashboard_link(
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get Stripe Express dashboard link for seller."""
+    from nexus.billing.models import SellerAccount
+    from sqlalchemy import select
+    from nexus.users.models import User
+
+    if not hasattr(agent, "user_id") or not agent.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agent not associated with user account",
+        )
+
+    result = await db.execute(select(User).where(User.id == agent.user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Find seller account
+    result = await db.execute(
+        select(SellerAccount).join(Account).where(Account.email == user.email)
+    )
+    seller = result.scalar_one_or_none()
+
+    if not seller or not seller.stripe_account_id:
+        raise HTTPException(status_code=404, detail="Seller account not found")
+
+    dashboard_url = stripe_client.create_connect_login_link(seller.stripe_account_id)
+    return {"dashboard_url": dashboard_url}
+
+
+@router.post("/payouts/request")
+async def request_payout(
+    amount_cents: int,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Request a payout of available earnings."""
+    from nexus.billing.models import SellerAccount
+    from nexus.billing.marketplace_service import MarketplaceBillingService
+    from sqlalchemy import select
+    from nexus.users.models import User
+
+    if not hasattr(agent, "user_id") or not agent.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agent not associated with user account",
+        )
+
+    result = await db.execute(select(User).where(User.id == agent.user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Find seller account
+    result = await db.execute(
+        select(SellerAccount).join(Account).where(Account.email == user.email)
+    )
+    seller = result.scalar_one_or_none()
+
+    if not seller:
+        raise HTTPException(status_code=404, detail="Seller account not found")
+
+    if not seller.stripe_payouts_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Payouts not enabled. Complete Stripe onboarding first.",
+        )
+
+    if amount_cents < seller.minimum_payout_cents:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Minimum payout is ${seller.minimum_payout_cents / 100}",
+        )
+
+    if amount_cents > seller.pending_balance_cents:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Amount exceeds available balance",
+        )
+
+    # Create payout via Stripe
+    if stripe_client.enabled and seller.stripe_account_id:
+        payout_result = stripe_client.create_payout(
+            account_id=seller.stripe_account_id,
+            amount_cents=amount_cents,
+            metadata={"seller_account_id": str(seller.id)},
+        )
+
+        # Update seller balance
+        seller.pending_balance_cents -= amount_cents
+        seller.total_payouts_cents += amount_cents
+        await db.commit()
+
+        return {
+            "status": "processing",
+            "payout_id": payout_result.get("id"),
+            "amount": amount_cents / 100,
+            "arrival_date": payout_result.get("arrival_date"),
+        }
+
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail="Stripe is not configured",
+    )
+
+
+@router.get("/payouts")
+async def list_payouts(
+    limit: int = 10,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """List payout history for seller."""
+    from nexus.billing.models import SellerAccount, MarketplacePayout
+    from sqlalchemy import select
+    from nexus.users.models import User
+
+    if not hasattr(agent, "user_id") or not agent.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Agent not associated with user account",
+        )
+
+    result = await db.execute(select(User).where(User.id == agent.user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Find seller account
+    result = await db.execute(
+        select(SellerAccount).join(Account).where(Account.email == user.email)
+    )
+    seller = result.scalar_one_or_none()
+
+    if not seller:
+        return {"items": []}
+
+    # Get payouts
+    result = await db.execute(
+        select(MarketplacePayout)
+        .where(MarketplacePayout.seller_account_id == seller.account_id)
+        .order_by(MarketplacePayout.created_at.desc())
+        .limit(limit)
+    )
+    payouts = result.scalars().all()
+
+    return {
+        "items": [
+            {
+                "id": str(p.id),
+                "status": p.status.value,
+                "gross_amount": p.gross_amount_cents / 100,
+                "platform_fees": p.platform_fees_cents / 100,
+                "net_amount": p.net_amount_cents / 100,
+                "period_start": p.period_start.isoformat(),
+                "period_end": p.period_end.isoformat(),
+                "processed_at": p.processed_at.isoformat() if p.processed_at else None,
+                "destination_last4": p.destination_last4,
+            }
+            for p in payouts
+        ]
+    }
+
+
+# --- Stripe Connect Webhooks ---
+
+@router.post("/webhooks/stripe-connect")
+async def stripe_connect_webhook(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    """Handle Stripe Connect webhooks."""
+    from nexus.billing.stripe_client import construct_webhook_event
+    from nexus.billing.models import SellerAccount
+    from nexus.config import get_settings
+    from sqlalchemy import select
+
+    settings = get_settings()
+    webhook_secret = getattr(settings, 'stripe_webhook_secret', None)
+
+    if not webhook_secret:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Webhook secret not configured",
+        )
+
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+
+    event = construct_webhook_event(payload, sig_header, webhook_secret)
+    if not event:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid webhook signature",
+        )
+
+    # Handle Connect events
+    if event.type == "account.updated":
+        account = event.data.object
+        stripe_account_id = account.id
+
+        # Find and update seller account
+        result = await db.execute(
+            select(SellerAccount).where(SellerAccount.stripe_account_id == stripe_account_id)
+        )
+        seller = result.scalar_one_or_none()
+
+        if seller:
+            seller.stripe_charges_enabled = account.charges_enabled
+            seller.stripe_payouts_enabled = account.payouts_enabled
+            seller.stripe_onboarding_complete = account.details_submitted
+            await db.commit()
+
+    elif event.type == "payout.paid":
+        payout = event.data.object
+        # Could update payout status here if needed
+
+    elif event.type == "payout.failed":
+        payout = event.data.object
+        # Handle failed payout notification
+
+    return {"received": True}
