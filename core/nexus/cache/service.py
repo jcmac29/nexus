@@ -3,13 +3,46 @@
 from __future__ import annotations
 
 import json
-import pickle
 from datetime import datetime, timedelta
 from typing import Any, TypeVar, Callable
 from functools import wraps
 import hashlib
 
 T = TypeVar("T")
+
+
+class SecureJSONEncoder(json.JSONEncoder):
+    """JSON encoder that handles common Python types safely."""
+
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return {"__datetime__": obj.isoformat()}
+        if isinstance(obj, timedelta):
+            return {"__timedelta__": obj.total_seconds()}
+        if hasattr(obj, "__dict__"):
+            # For simple objects, serialize their dict (but not arbitrary objects)
+            return {"__type__": type(obj).__name__, "__data__": str(obj)}
+        return super().default(obj)
+
+
+def secure_json_decode(obj):
+    """Decode JSON with special type handling."""
+    if isinstance(obj, dict):
+        if "__datetime__" in obj:
+            return datetime.fromisoformat(obj["__datetime__"])
+        if "__timedelta__" in obj:
+            return timedelta(seconds=obj["__timedelta__"])
+    return obj
+
+
+def safe_serialize(value: Any) -> bytes:
+    """Safely serialize a value to JSON bytes. No pickle allowed."""
+    return json.dumps(value, cls=SecureJSONEncoder).encode("utf-8")
+
+
+def safe_deserialize(data: bytes) -> Any:
+    """Safely deserialize JSON bytes. No pickle allowed."""
+    return json.loads(data.decode("utf-8"), object_hook=secure_json_decode)
 
 
 class CacheService:
@@ -39,7 +72,7 @@ class CacheService:
                 value = await self._redis.get(key)
                 if value is not None:
                     self._stats["hits"] += 1
-                    return pickle.loads(value)
+                    return safe_deserialize(value)
                 self._stats["misses"] += 1
                 return default
             except Exception:
@@ -68,7 +101,7 @@ class CacheService:
         """Set a value in cache."""
         if self._redis:
             try:
-                serialized = pickle.dumps(value)
+                serialized = safe_serialize(value)
                 if ttl:
                     await self._redis.setex(key, ttl, serialized)
                 else:

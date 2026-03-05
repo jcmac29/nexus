@@ -35,14 +35,14 @@ class HealthResponse(BaseModel):
 async def check_database() -> ComponentHealth:
     """Check database connectivity."""
     try:
-        from nexus.database import get_async_engine
+        from nexus.database import engine
+        from sqlalchemy import text
         import time
 
-        engine = get_async_engine()
         start = time.time()
 
         async with engine.connect() as conn:
-            await conn.execute("SELECT 1")
+            await conn.execute(text("SELECT 1"))
 
         latency = (time.time() - start) * 1000
 

@@ -3,10 +3,53 @@
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
 
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from nexus import __version__
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add security headers to all responses."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+
+        # Prevent MIME type sniffing
+        response.headers["X-Content-Type-Options"] = "nosniff"
+
+        # Prevent clickjacking
+        response.headers["X-Frame-Options"] = "DENY"
+
+        # XSS protection (legacy but still useful)
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+
+        # Referrer policy
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+        # Permissions policy (restrict browser features)
+        response.headers["Permissions-Policy"] = (
+            "accelerometer=(), camera=(), geolocation=(), gyroscope=(), "
+            "magnetometer=(), microphone=(), payment=(), usb=()"
+        )
+
+        # Content Security Policy (API responses)
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'none'; frame-ancestors 'none'"
+        )
+
+        # Strict Transport Security (force HTTPS)
+        response.headers["Strict-Transport-Security"] = (
+            "max-age=31536000; includeSubDomains; preload"
+        )
+
+        # Prevent caching of sensitive data
+        if "/api/" in request.url.path:
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+
+        return response
 from nexus.config import get_settings
 from nexus.database import init_db
 from nexus.cache import get_cache
@@ -106,27 +149,46 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# CORS middleware - configure allowed origins
-allowed_origins = [
-    settings.admin_dashboard_url,
-    settings.landing_url,
-]
+# CORS middleware - configure allowed origins based on environment
 if settings.debug:
-    allowed_origins.extend([
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:3001",
-        "http://localhost:8000",
-    ])
+    # Development: allow all origins
+    allowed_origins = ["*"]
+    allow_credentials = False  # Can't use credentials with wildcard origin
+else:
+    # Production: strict origin list
+    allowed_origins = []
+
+    # Add configured frontend URLs
+    if settings.admin_dashboard_url:
+        allowed_origins.append(settings.admin_dashboard_url)
+    if settings.landing_url:
+        allowed_origins.append(settings.landing_url)
+
+    # For production deployments, also allow the base domain
+    if hasattr(settings, 'nexus_public_url') and settings.nexus_public_url:
+        allowed_origins.append(settings.nexus_public_url)
+
+    allow_credentials = True
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins if not settings.debug else ["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=allowed_origins,
+    allow_credentials=allow_credentials,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=[
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "X-API-Key",
+    ],
+    expose_headers=["X-Request-ID", "X-RateLimit-Remaining"],
+    max_age=600,  # Cache preflight for 10 minutes
 )
+
+# Security headers middleware (runs first - outermost)
+app.add_middleware(SecurityHeadersMiddleware)
 
 # Observability middleware (order matters - tracing first, then logging, then metrics)
 app.add_middleware(MetricsMiddleware)

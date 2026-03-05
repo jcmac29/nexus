@@ -316,13 +316,84 @@ class OrchestrationService:
         if not step.condition:
             return {"branch": "default"}
 
-        # Simple condition evaluation (could use more sophisticated expression engine)
+        # SECURITY: Use safe expression evaluation - no arbitrary code execution
         try:
-            # Safe eval with limited scope
-            result = eval(step.condition, {"state": execution.state})
+            result = self._safe_eval_condition(step.condition, execution.state)
             return {"branch": "true" if result else "false", "condition_result": bool(result)}
         except Exception as e:
             return {"branch": "error", "error": str(e)}
+
+    def _safe_eval_condition(self, condition: str, state: dict) -> bool:
+        """
+        Safely evaluate a condition expression without arbitrary code execution.
+        Only allows: comparisons, boolean ops, attribute access, literals.
+        """
+        import ast
+        import operator
+
+        # Whitelist of allowed operations
+        ALLOWED_OPS = {
+            ast.Eq: operator.eq,
+            ast.NotEq: operator.ne,
+            ast.Lt: operator.lt,
+            ast.LtE: operator.le,
+            ast.Gt: operator.gt,
+            ast.GtE: operator.ge,
+            ast.And: lambda a, b: a and b,
+            ast.Or: lambda a, b: a or b,
+            ast.Not: operator.not_,
+            ast.In: lambda a, b: a in b,
+            ast.NotIn: lambda a, b: a not in b,
+        }
+
+        def _eval(node):
+            if isinstance(node, ast.Expression):
+                return _eval(node.body)
+            elif isinstance(node, ast.Constant):
+                return node.value
+            elif isinstance(node, ast.Name):
+                if node.id == 'state':
+                    return state
+                raise ValueError(f"Unknown variable: {node.id}")
+            elif isinstance(node, ast.Subscript):
+                value = _eval(node.value)
+                key = _eval(node.slice)
+                return value[key]
+            elif isinstance(node, ast.Attribute):
+                value = _eval(node.value)
+                return getattr(value, node.attr)
+            elif isinstance(node, ast.Compare):
+                left = _eval(node.left)
+                for op, comparator in zip(node.ops, node.comparators):
+                    op_func = ALLOWED_OPS.get(type(op))
+                    if not op_func:
+                        raise ValueError(f"Disallowed operation: {type(op).__name__}")
+                    right = _eval(comparator)
+                    if not op_func(left, right):
+                        return False
+                    left = right
+                return True
+            elif isinstance(node, ast.BoolOp):
+                op_func = ALLOWED_OPS.get(type(node.op))
+                if not op_func:
+                    raise ValueError(f"Disallowed operation: {type(node.op).__name__}")
+                values = [_eval(v) for v in node.values]
+                result = values[0]
+                for v in values[1:]:
+                    result = op_func(result, v)
+                return result
+            elif isinstance(node, ast.UnaryOp):
+                if isinstance(node.op, ast.Not):
+                    return not _eval(node.operand)
+                raise ValueError(f"Disallowed operation: {type(node.op).__name__}")
+            else:
+                raise ValueError(f"Disallowed expression: {type(node).__name__}")
+
+        try:
+            tree = ast.parse(condition, mode='eval')
+            return bool(_eval(tree))
+        except SyntaxError as e:
+            raise ValueError(f"Invalid condition syntax: {e}")
 
     async def _execute_transform(self, step: WorkflowStep, input_data: dict, state: dict) -> dict:
         """Transform data."""

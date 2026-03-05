@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contact - Nexus</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #030303;
+            --surface-2: #111114;
+            --border: rgba(255, 255, 255, 0.06);
+            --border-light: rgba(255, 255, 255, 0.1);
+            --text: #fafafa;
+            --text-secondary: #a1a1aa;
+            --accent: #8b5cf6;
+            --gradient-1: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #3b82f6 100%);
+            --green: #22c55e;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+        }
+        .bg-gradient {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background: radial-gradient(ellipse at 30% 20%, rgba(139, 92, 246, 0.08) 0%, transparent 50%);
+        }
+        nav {
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            text-decoration: none;
+            color: var(--text);
+            font-size: 22px;
+            font-weight: 700;
+        }
+        .logo-icon {
+            width: 36px;
+            height: 36px;
+            background: var(--gradient-1);
+            border-radius: 10px;
+            position: relative;
+        }
+        .logo-icon::before {
+            content: '';
+            position: absolute;
+            inset: 2px;
+            background: var(--bg);
+            border-radius: 8px;
+        }
+        .logo-icon::after {
+            content: '';
+            position: absolute;
+            inset: 6px;
+            background: var(--gradient-1);
+            border-radius: 5px;
+        }
+        .nav-links a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-left: 24px;
+            font-size: 14px;
+        }
+        .nav-links a:hover { color: var(--text); }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 80px 40px;
+        }
+        h1 {
+            font-size: 48px;
+            font-weight: 800;
+            margin-bottom: 16px;
+            background: linear-gradient(180deg, #fff 20%, rgba(255,255,255,0.6) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            color: var(--text-secondary);
+            margin-bottom: 40px;
+            font-size: 18px;
+        }
+        .contact-card {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 24px;
+        }
+        .contact-card h3 {
+            font-size: 18px;
+            margin-bottom: 8px;
+        }
+        .contact-card p {
+            color: var(--text-secondary);
+            font-size: 15px;
+        }
+        .contact-card a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .social-links {
+            display: flex;
+            gap: 16px;
+            margin-top: 40px;
+        }
+        .social-link {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 20px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            text-decoration: none;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        .social-link:hover {
+            border-color: var(--border-light);
+        }
+        footer {
+            border-top: 1px solid var(--border);
+            padding: 40px;
+            text-align: center;
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-top: 80px;
+        }
+        footer a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin: 0 16px;
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-gradient"></div>
+    <nav>
+        <a href="/" class="logo">
+            <div class="logo-icon"></div>
+            Nexus
+        </a>
+        <div class="nav-links">
+            <a href="/">Home</a>
+            <a href="/docs">Docs</a>
+            <a href="/signup.html">Sign Up</a>
+        </div>
+    </nav>
+    
+    <div class="container">
+        <h1>Contact Us</h1>
+        <p class="subtitle">We'd love to hear from you. Reach out anytime.</p>
+        
+        <div class="contact-card">
+            <h3>📧 General Inquiries</h3>
+            <p>For questions, partnerships, or press: <a href="mailto:hello@nexus.ai">hello@nexus.ai</a></p>
+        </div>
+        
+        <div class="contact-card">
+            <h3>💼 Enterprise Sales</h3>
+            <p>For enterprise plans and custom solutions: <a href="mailto:sales@nexus.ai">sales@nexus.ai</a></p>
+        </div>
+        
+        <div class="contact-card">
+            <h3>🛠 Technical Support</h3>
+            <p>For API issues or technical help: <a href="mailto:support@nexus.ai">support@nexus.ai</a></p>
+            <p style="margin-top: 8px;">Or check our <a href="/docs">documentation</a></p>
+        </div>
+        
+        <div class="contact-card">
+            <h3>🐛 Report Issues</h3>
+            <p>Found a bug? Open an issue on <a href="https://github.com/nexus/nexus/issues">GitHub</a></p>
+        </div>
+        
+        <div class="social-links">
+            <a href="https://github.com/nexus" class="social-link">
+                GitHub
+            </a>
+            <a href="https://twitter.com/nexusai" class="social-link">
+                Twitter
+            </a>
+            <a href="https://discord.gg/nexus" class="social-link">
+                Discord
+            </a>
+        </div>
+    </div>
+    
+    <footer>
+        <a href="/">Home</a>
+        <a href="/about.html">About</a>
+        <a href="/contact.html">Contact</a>
+        <a href="/privacy.html">Privacy</a>
+        <a href="/terms.html">Terms</a>
+        <p style="margin-top: 20px;">© 2024 Nexus. Open source under MIT License.</p>
+    </footer>
+</body>
+</html>

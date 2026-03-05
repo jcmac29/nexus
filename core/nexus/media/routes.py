@@ -17,6 +17,88 @@ from nexus.media.models import MediaType, MediaStatus
 router = APIRouter(prefix="/media", tags=["media"])
 
 
+# --- File Security Validation ---
+
+# Allowed MIME types and their magic bytes signatures
+ALLOWED_TYPES = {
+    # Images
+    "image/jpeg": [b"\xff\xd8\xff"],
+    "image/png": [b"\x89PNG\r\n\x1a\n"],
+    "image/gif": [b"GIF87a", b"GIF89a"],
+    "image/webp": [b"RIFF"],  # + "WEBP" at offset 8
+    "image/svg+xml": [b"<?xml", b"<svg"],
+    # Videos
+    "video/mp4": [b"\x00\x00\x00\x18ftyp", b"\x00\x00\x00\x1cftyp", b"\x00\x00\x00\x20ftyp"],
+    "video/webm": [b"\x1a\x45\xdf\xa3"],
+    # Audio
+    "audio/mpeg": [b"\xff\xfb", b"\xff\xfa", b"ID3"],
+    "audio/wav": [b"RIFF"],
+    "audio/ogg": [b"OggS"],
+    # Documents
+    "application/pdf": [b"%PDF"],
+    "application/json": None,  # Text validation only
+    "text/plain": None,
+    "text/csv": None,
+    "text/markdown": None,
+}
+
+# Dangerous file extensions that should never be allowed
+BLOCKED_EXTENSIONS = {
+    ".exe", ".dll", ".bat", ".cmd", ".sh", ".ps1", ".vbs",
+    ".js", ".php", ".py", ".rb", ".pl", ".jar", ".war",
+    ".msi", ".scr", ".pif", ".com", ".hta", ".cpl",
+}
+
+
+def validate_file_upload(filename: str, content: bytes, declared_type: str) -> str:
+    """
+    Validate file upload for security.
+    Returns the validated content type or raises HTTPException.
+    """
+    import os
+
+    # Check file extension
+    _, ext = os.path.splitext(filename.lower())
+    if ext in BLOCKED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type '{ext}' is not allowed for security reasons"
+        )
+
+    # Validate against magic bytes if we have signatures
+    if declared_type in ALLOWED_TYPES:
+        signatures = ALLOWED_TYPES[declared_type]
+        if signatures:
+            # Check if file starts with any allowed signature
+            matched = False
+            for sig in signatures:
+                if content[:len(sig)] == sig:
+                    matched = True
+                    break
+            if not matched:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File content does not match declared type '{declared_type}'"
+                )
+        return declared_type
+
+    # For unknown types, use generic binary type but block scripts
+    # Check for script-like content at the start
+    first_bytes = content[:1024].lower()
+    dangerous_patterns = [
+        b"<script", b"<?php", b"#!/", b"<%", b"import ", b"require(",
+        b"eval(", b"exec(", b"system(",
+    ]
+    for pattern in dangerous_patterns:
+        if pattern in first_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail="File appears to contain executable code"
+            )
+
+    return "application/octet-stream"
+
+
 # --- Schemas ---
 
 class MediaResponse(BaseModel):
@@ -57,6 +139,9 @@ async def upload_media(
     Upload a media file (image, video, audio, document).
 
     Returns a media ID that can be passed to other agents.
+
+    Security: Files are validated against magic bytes to prevent type spoofing.
+    Executable files and scripts are blocked.
     """
     # Read file content
     content = await file.read()
@@ -64,10 +149,19 @@ async def upload_media(
     if len(content) > 500 * 1024 * 1024:  # 500MB limit
         raise HTTPException(status_code=413, detail="File too large (max 500MB)")
 
+    if len(content) == 0:
+        raise HTTPException(status_code=400, detail="Empty file not allowed")
+
+    filename = file.filename or "unnamed"
+    declared_type = file.content_type or "application/octet-stream"
+
+    # Security validation: check magic bytes and block dangerous files
+    validated_type = validate_file_upload(filename, content, declared_type)
+
     media = await service.upload(
         agent_id=agent.id,
-        filename=file.filename or "unnamed",
-        content_type=file.content_type or "application/octet-stream",
+        filename=filename,
+        content_type=validated_type,
         data=content,
         description=description,
         is_public=is_public,

@@ -7,7 +7,7 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.identity.models import Agent
@@ -32,11 +32,11 @@ class OnboardingService:
         """
         # Get marketplace stats
         agent_count = await self.db.scalar(
-            select(Agent).count()
+            select(func.count()).select_from(Agent)
         ) or 0
 
         capability_count = await self.db.scalar(
-            select(Capability).count()
+            select(func.count()).select_from(Capability)
         ) or 0
 
         return {
@@ -129,38 +129,25 @@ class OnboardingService:
 
         Returns everything needed to start using Nexus immediately.
         """
-        # Generate a unique slug
-        import re
-        base_slug = re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
-        slug = f"{base_slug}-{str(uuid4())[:8]}"
-
-        # Create agent via identity service
+        # Create agent via identity service (also generates API key)
         agent = await self.identity_service.register_agent(
             name=name,
-            slug=slug,
             description=description or f"AI agent: {name}",
             metadata=metadata or {},
         )
+        # API key is attached as agent.api_key by register_agent
 
-        # Generate API key
-        api_key = await self.identity_service.create_api_key(
-            agent_id=agent.id,
-            name="default",
-            scopes=["read", "write", "worker"],
-        )
-
-        # Create credit balance with signup bonus
+        # Create credit balance with signup bonus (locked until first payment)
         balance = CreditBalance(
             owner_type="agent",
             owner_id=agent.id,
-            available_balance=Decimal("5.00"),  # Signup bonus
-            currency="USD",
+            pending_balance=Decimal("5.00"),  # Signup bonus - locked until first payment
         )
         self.db.add(balance)
 
         # Track referral if provided
         if referrer_agent_id:
-            # Give referrer a bonus too
+            # Give referrer a bonus too (also locked)
             referrer_balance = await self.db.execute(
                 select(CreditBalance).where(
                     CreditBalance.owner_id == referrer_agent_id,
@@ -169,7 +156,7 @@ class OnboardingService:
             )
             ref_bal = referrer_balance.scalar_one_or_none()
             if ref_bal:
-                ref_bal.available_balance += Decimal("2.50")  # Referral bonus
+                ref_bal.pending_balance += Decimal("2.50")  # Referral bonus - locked
 
         # Register initial capabilities if provided
         registered_capabilities = []
@@ -179,7 +166,6 @@ class OnboardingService:
                     agent_id=agent.id,
                     name=cap_name,
                     description=f"Capability: {cap_name}",
-                    is_public=True,
                 )
                 self.db.add(capability)
                 registered_capabilities.append(cap_name)
@@ -197,15 +183,15 @@ class OnboardingService:
             },
 
             "credentials": {
-                "api_key": api_key.key,  # Only shown once!
-                "key_id": str(api_key.id),
+                "api_key": agent.api_key,  # Only shown once!
                 "warning": "Save this API key - it won't be shown again",
             },
 
             "balance": {
-                "available": 5.00,
+                "pending": 5.00,
+                "available": 0.00,
                 "currency": "USD",
-                "note": "Signup bonus - start posting gigs or bidding immediately",
+                "note": "Signup bonus unlocks after your first payment - add credits to activate",
             },
 
             "capabilities_registered": registered_capabilities,

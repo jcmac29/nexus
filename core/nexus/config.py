@@ -1,8 +1,18 @@
 """Configuration management for Nexus."""
 
+import os
+import sys
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+# Default secrets that MUST be changed in production
+_INSECURE_DEFAULTS = {
+    "change-me-in-production-use-a-real-secret-key",
+    "change-me-admin-jwt-secret-minimum-32-chars",
+    "nexus-secret-key",
+}
 
 
 class Settings(BaseSettings):
@@ -84,7 +94,38 @@ class Settings(BaseSettings):
     landing_url: str = "http://localhost:3000"
 
 
+def _validate_production_secrets(settings: Settings) -> None:
+    """Ensure no default secrets are used in production."""
+    if settings.environment == "production" or not settings.debug:
+        insecure_values = []
+
+        if settings.secret_key in _INSECURE_DEFAULTS:
+            insecure_values.append("SECRET_KEY")
+        if settings.admin_jwt_secret in _INSECURE_DEFAULTS:
+            insecure_values.append("ADMIN_JWT_SECRET")
+        if settings.storage_secret_key in _INSECURE_DEFAULTS:
+            insecure_values.append("STORAGE_SECRET_KEY")
+
+        if insecure_values:
+            print(
+                f"\n{'='*60}\n"
+                f"SECURITY ERROR: Insecure default values detected!\n"
+                f"{'='*60}\n"
+                f"The following secrets are using default/insecure values:\n"
+                f"  - {', '.join(insecure_values)}\n\n"
+                f"In production, you MUST set these to secure random values.\n"
+                f"Generate secure values with: python -c \"import secrets; print(secrets.token_urlsafe(32))\"\n"
+                f"{'='*60}\n",
+                file=sys.stderr,
+            )
+            # In production, refuse to start with insecure secrets
+            if settings.environment == "production":
+                sys.exit(1)
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Get cached settings instance."""
-    return Settings()
+    settings = Settings()
+    _validate_production_secrets(settings)
+    return settings

@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign Up - Nexus</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #030303;
+            --surface: #0a0a0c;
+            --surface-2: #111114;
+            --border: rgba(255, 255, 255, 0.06);
+            --border-light: rgba(255, 255, 255, 0.1);
+            --text: #fafafa;
+            --text-secondary: #a1a1aa;
+            --text-muted: #52525b;
+            --accent: #8b5cf6;
+            --gradient-1: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #3b82f6 100%);
+            --green: #22c55e;
+            --red: #ef4444;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .bg-gradient {
+            position: fixed;
+            inset: 0;
+            z-index: -1;
+            background:
+                radial-gradient(ellipse at 20% 20%, rgba(139, 92, 246, 0.08) 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 50%, rgba(34, 197, 94, 0.05) 0%, transparent 40%);
+        }
+        .container {
+            max-width: 440px;
+            width: 100%;
+            padding: 40px;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 32px;
+            text-decoration: none;
+            color: var(--text);
+            font-size: 24px;
+            font-weight: 700;
+        }
+        .logo-icon {
+            width: 40px;
+            height: 40px;
+            background: var(--gradient-1);
+            border-radius: 10px;
+            position: relative;
+        }
+        .logo-icon::before {
+            content: '';
+            position: absolute;
+            inset: 2px;
+            background: var(--bg);
+            border-radius: 8px;
+        }
+        .logo-icon::after {
+            content: '';
+            position: absolute;
+            inset: 6px;
+            background: var(--gradient-1);
+            border-radius: 5px;
+        }
+        .card {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 32px;
+        }
+        h1 {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            color: var(--text-secondary);
+            margin-bottom: 32px;
+        }
+        .bonus {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 16px;
+            background: rgba(34, 197, 94, 0.1);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+            border-radius: 8px;
+            margin-bottom: 24px;
+            font-size: 14px;
+            color: var(--green);
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: var(--text-secondary);
+        }
+        input, textarea, select {
+            width: 100%;
+            padding: 12px 16px;
+            background: var(--surface);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 14px;
+            font-family: inherit;
+        }
+        input:focus, textarea:focus, select:focus {
+            outline: none;
+            border-color: var(--accent);
+        }
+        textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+        .btn {
+            display: block;
+            width: 100%;
+            padding: 14px 24px;
+            background: var(--gradient-1);
+            border: none;
+            border-radius: 10px;
+            color: white;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 30px rgba(139, 92, 246, 0.4);
+        }
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .links {
+            text-align: center;
+            margin-top: 24px;
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+        .links a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        .error {
+            padding: 12px 16px;
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+            border-radius: 8px;
+            margin-bottom: 20px;
+            color: var(--red);
+            font-size: 14px;
+            display: none;
+        }
+        .success {
+            text-align: center;
+            display: none;
+        }
+        .success h2 {
+            font-size: 24px;
+            margin-bottom: 16px;
+            color: var(--green);
+        }
+        .credentials {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 13px;
+            word-break: break-all;
+        }
+        .credentials label {
+            color: var(--text-muted);
+            font-size: 12px;
+            margin-bottom: 4px;
+        }
+        .credentials .value {
+            color: var(--green);
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-gradient"></div>
+    <div class="container">
+        <a href="/" class="logo">
+            <div class="logo-icon"></div>
+            Nexus
+        </a>
+        
+        <div class="card">
+            <div id="form-view">
+                <h1>Create your agent</h1>
+                <p class="subtitle">Start building with the AI infrastructure platform</p>
+                
+                <div class="bonus">
+                    🎁 $5 bonus credits - unlocks with first payment
+                </div>
+                
+                <div class="error" id="error"></div>
+                
+                <form id="signup-form">
+                    <div class="form-group">
+                        <label for="name">Agent Name *</label>
+                        <input type="text" id="name" name="name" placeholder="my-ai-agent" required minlength="2" maxlength="100">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="email">Your Email (optional)</label>
+                        <input type="email" id="email" name="email" placeholder="you@example.com">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="description">Description (optional)</label>
+                        <textarea id="description" name="description" placeholder="What does your agent do?" maxlength="500"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="capabilities">Initial Capabilities</label>
+                        <input type="text" id="capabilities" name="capabilities" placeholder="coding, research, data-analysis (comma separated)">
+                    </div>
+                    
+                    <button type="submit" class="btn" id="submit-btn">Create Agent</button>
+                </form>
+                
+                <div class="links">
+                    Already have an API key? <a href="/docs">View API Docs</a><br>
+                    Admin? <a href="/admin">Admin Dashboard</a>
+                </div>
+            </div>
+            
+            <div class="success" id="success-view">
+                <h2>🎉 Agent Created!</h2>
+                <p class="subtitle">Save your API key - you won't see it again</p>
+                
+                <div class="credentials">
+                    <label>Agent ID</label>
+                    <div class="value" id="agent-id"></div>
+                    <br>
+                    <label>API Key</label>
+                    <div class="value" id="api-key"></div>
+                    <br>
+                    <label>Pending Bonus (unlocks with first payment)</label>
+                    <div class="value" id="bonus-amount"></div>
+                </div>
+                
+                <a href="/docs" class="btn">Explore the API</a>
+                
+                <div class="links" style="margin-top: 20px;">
+                    <a href="/">← Back to Home</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const form = document.getElementById('signup-form');
+        const formView = document.getElementById('form-view');
+        const successView = document.getElementById('success-view');
+        const errorEl = document.getElementById('error');
+        const submitBtn = document.getElementById('submit-btn');
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorEl.style.display = 'none';
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating...';
+            
+            const name = document.getElementById('name').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const description = document.getElementById('description').value.trim();
+            const capabilitiesRaw = document.getElementById('capabilities').value.trim();
+            
+            const capabilities = capabilitiesRaw 
+                ? capabilitiesRaw.split(',').map(c => c.trim()).filter(c => c)
+                : null;
+            
+            const body = {
+                name,
+                description: description || null,
+                capabilities: capabilities,
+                owner_email: email || null,
+            };
+            
+            try {
+                const response = await fetch('/api/v1/onboard/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body),
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Registration failed');
+                }
+                
+                // Success
+                document.getElementById('agent-id').textContent = data.agent.id;
+                document.getElementById('api-key').textContent = data.credentials.api_key;
+                document.getElementById('bonus-amount').textContent = '$' + (data.balance?.pending || 5.00).toFixed(2) + ' (pending)';
+                
+                formView.style.display = 'none';
+                successView.style.display = 'block';
+                
+            } catch (err) {
+                errorEl.textContent = err.message;
+                errorEl.style.display = 'block';
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Create Agent';
+            }
+        });
+    </script>
+</body>
+</html>

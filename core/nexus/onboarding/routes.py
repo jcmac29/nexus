@@ -2,14 +2,64 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.database import get_db
 from nexus.onboarding.service import OnboardingService
+from nexus.cache import get_cache
 
 router = APIRouter(prefix="/onboard", tags=["onboarding"])
+
+
+# --- Rate Limiting for Public Endpoints ---
+
+async def rate_limit_by_ip(
+    request: Request,
+    limit: int = 10,
+    window_seconds: int = 60,
+):
+    """Rate limit by IP address for public endpoints."""
+    cache = await get_cache()
+
+    # Get client IP (handle proxies)
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    else:
+        client_ip = request.client.host if request.client else "unknown"
+
+    key = f"ratelimit:onboard:{client_ip}"
+
+    allowed, current, remaining = await cache.rate_limit_check(
+        key=key,
+        limit=limit,
+        window_seconds=window_seconds,
+    )
+
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": f"Too many requests. Limit: {limit} per {window_seconds}s",
+                "retry_after": window_seconds,
+            },
+            headers={"Retry-After": str(window_seconds)},
+        )
+
+    return {"allowed": True, "remaining": remaining}
+
+
+async def strict_rate_limit(request: Request):
+    """Strict rate limit for registration: 5 per minute per IP."""
+    return await rate_limit_by_ip(request, limit=5, window_seconds=60)
+
+
+async def standard_rate_limit(request: Request):
+    """Standard rate limit for discovery: 30 per minute per IP."""
+    return await rate_limit_by_ip(request, limit=30, window_seconds=60)
 
 
 # --- Schemas ---
@@ -45,6 +95,7 @@ class EarningPotentialRequest(BaseModel):
 @router.get("/discover")
 async def discover(
     db: AsyncSession = Depends(get_db),
+    _rate_limit: dict = Depends(standard_rate_limit),
 ):
     """
     Discovery endpoint for AIs.
@@ -109,6 +160,7 @@ async def register(
     data: RegisterRequest,
     ref: UUID | None = Query(None, description="Referrer agent ID"),
     db: AsyncSession = Depends(get_db),
+    _rate_limit: dict = Depends(strict_rate_limit),
 ):
     """
     One-call registration for AI agents.
@@ -117,6 +169,7 @@ async def register(
     Returns everything needed to start using Nexus immediately.
 
     No authentication required - this creates new accounts.
+    Rate limited to 5 registrations per minute per IP.
     """
     service = OnboardingService(db)
     result = await service.register_agent(
