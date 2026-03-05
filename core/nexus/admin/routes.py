@@ -71,6 +71,39 @@ async def login_rate_limit(request: Request):
         )
 
 
+async def refresh_rate_limit(request: Request):
+    """
+    SECURITY: Rate limit token refresh attempts to prevent abuse.
+    Limit: 20 refresh attempts per minute per IP address.
+    """
+    cache = await get_cache()
+
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    else:
+        client_ip = request.client.host if request.client else "unknown"
+
+    key = f"ratelimit:admin:refresh:{client_ip}"
+
+    allowed, current, remaining = await cache.rate_limit_check(
+        key=key,
+        limit=20,  # 20 refresh attempts
+        window_seconds=60,  # per minute
+    )
+
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": "Too many refresh attempts. Please try again later.",
+                "retry_after": 60,
+            },
+            headers={"Retry-After": "60"},
+        )
+
+
 # ============================================================================
 # Authentication Endpoints
 # ============================================================================
@@ -99,6 +132,7 @@ async def login(
 async def refresh_token(
     request: RefreshRequest,
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(refresh_rate_limit),  # SECURITY: Rate limit refresh attempts
 ):
     """Refresh access token using refresh token."""
     service = AdminService(db)

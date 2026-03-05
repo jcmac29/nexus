@@ -2,10 +2,11 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.auth import get_current_agent
+from nexus.cache import get_cache
 from nexus.database import get_db
 from nexus.identity.models import Agent
 from nexus.identity.schemas import (
@@ -28,6 +29,75 @@ async def get_identity_service(db: AsyncSession = Depends(get_db)) -> IdentitySe
     return IdentityService(db)
 
 
+# --- Rate Limiting ---
+
+
+async def registration_rate_limit(request: Request):
+    """
+    SECURITY: Rate limit agent registration to prevent mass account creation.
+    Limit: 5 registrations per hour per IP address.
+    """
+    cache = await get_cache()
+
+    # Get client IP (handle proxies)
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    else:
+        client_ip = request.client.host if request.client else "unknown"
+
+    key = f"ratelimit:registration:{client_ip}"
+
+    allowed, current, remaining = await cache.rate_limit_check(
+        key=key,
+        limit=5,  # 5 registrations
+        window_seconds=3600,  # per hour
+    )
+
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": "Too many registration attempts. Please try again later.",
+                "retry_after": 3600,
+            },
+            headers={"Retry-After": "3600"},
+        )
+
+
+async def api_key_creation_rate_limit(request: Request):
+    """
+    SECURITY: Rate limit API key creation to prevent abuse.
+    Limit: 10 keys per hour per IP address.
+    """
+    cache = await get_cache()
+
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    else:
+        client_ip = request.client.host if request.client else "unknown"
+
+    key = f"ratelimit:apikey_create:{client_ip}"
+
+    allowed, current, remaining = await cache.rate_limit_check(
+        key=key,
+        limit=10,  # 10 key creations
+        window_seconds=3600,  # per hour
+    )
+
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": "Too many API key creation attempts. Please try again later.",
+                "retry_after": 3600,
+            },
+            headers={"Retry-After": "3600"},
+        )
+
 
 
 # --- Agent Routes ---
@@ -42,6 +112,7 @@ async def get_identity_service(db: AsyncSession = Depends(get_db)) -> IdentitySe
 async def create_agent(
     data: AgentCreate,
     service: IdentityService = Depends(get_identity_service),
+    _: None = Depends(registration_rate_limit),  # SECURITY: Rate limit registration
 ) -> AgentCreateResponse:
     """
     Register a new AI agent with Nexus.
@@ -155,6 +226,7 @@ async def create_api_key(
     data: APIKeyCreate,
     current_agent: Agent = Depends(get_current_agent),
     service: IdentityService = Depends(get_identity_service),
+    _: None = Depends(api_key_creation_rate_limit),  # SECURITY: Rate limit key creation
 ) -> APIKeyCreateResponse:
     """
     Create a new API key for the current agent.

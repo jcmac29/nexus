@@ -12,6 +12,7 @@ _INSECURE_DEFAULTS = {
     "change-me-in-production-use-a-real-secret-key",
     "change-me-admin-jwt-secret-minimum-32-chars",
     "nexus-secret-key",
+    "nexus",  # Default storage access key
 }
 
 
@@ -103,6 +104,8 @@ def _validate_production_secrets(settings: Settings) -> None:
             insecure_values.append("SECRET_KEY")
         if settings.admin_jwt_secret in _INSECURE_DEFAULTS:
             insecure_values.append("ADMIN_JWT_SECRET")
+        if settings.storage_access_key in _INSECURE_DEFAULTS:
+            insecure_values.append("STORAGE_ACCESS_KEY")
         if settings.storage_secret_key in _INSECURE_DEFAULTS:
             insecure_values.append("STORAGE_SECRET_KEY")
 
