@@ -86,6 +86,43 @@ class OAuthService:
 
         return auth_url, state
 
+    def validate_state(self, state: str, provider: OAuthProvider) -> bool:
+        """
+        Validate OAuth state token.
+
+        SECURITY: Prevents CSRF attacks by verifying state matches what we generated.
+        """
+        if state not in self._state_store:
+            return False
+
+        stored = self._state_store[state]
+
+        # Check provider matches
+        if stored["provider"] != provider:
+            return False
+
+        # Check state hasn't expired (10 minute window)
+        created_at = stored["created_at"]
+        if datetime.now(timezone.utc) - created_at > timedelta(minutes=10):
+            # Clean up expired state
+            del self._state_store[state]
+            return False
+
+        # State is valid - remove it to prevent reuse
+        del self._state_store[state]
+        return True
+
+    def cleanup_expired_states(self) -> int:
+        """Remove expired state tokens. Returns count of cleaned states."""
+        now = datetime.now(timezone.utc)
+        expired = [
+            state for state, data in self._state_store.items()
+            if now - data["created_at"] > timedelta(minutes=10)
+        ]
+        for state in expired:
+            del self._state_store[state]
+        return len(expired)
+
     async def exchange_code(
         self,
         provider: OAuthProvider,

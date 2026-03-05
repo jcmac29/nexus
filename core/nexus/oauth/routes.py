@@ -89,6 +89,13 @@ async def oauth_callback(
     oauth_service = OAuthService(session)
     identity_service = IdentityService(session)
 
+    # SECURITY: Validate state token to prevent CSRF attacks
+    if not oauth_service.validate_state(request.state, request.provider):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired state token. Please restart the OAuth flow.",
+        )
+
     # Exchange code for tokens
     try:
         tokens = await oauth_service.exchange_code(
@@ -199,6 +206,13 @@ async def connect_oauth(
     Use this to add Google/GitHub login to an existing account.
     """
     oauth_service = OAuthService(session)
+
+    # SECURITY: Validate state token to prevent CSRF attacks
+    if not oauth_service.validate_state(request.state, request.provider):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired state token. Please restart the OAuth flow.",
+        )
 
     # Exchange code for tokens
     try:

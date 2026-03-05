@@ -1,5 +1,6 @@
 """Tenant middleware for multi-tenant request handling."""
 
+from datetime import datetime, timezone
 from typing import Callable
 from uuid import UUID
 
@@ -8,6 +9,11 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 
 from nexus.config import get_settings
+
+# Cache TTL in seconds (5 minutes)
+TENANT_CACHE_TTL = 300
+# Maximum cache size to prevent memory exhaustion
+TENANT_CACHE_MAX_SIZE = 10000
 
 
 class TenantMiddleware(BaseHTTPMiddleware):
@@ -24,7 +30,8 @@ class TenantMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.enabled = enabled
         self.base_domain = base_domain
-        self._tenant_cache: dict[str, dict] = {}
+        # Cache stores (data, timestamp) tuples
+        self._tenant_cache: dict[str, tuple[dict, datetime]] = {}
 
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         if not self.enabled:
@@ -80,12 +87,54 @@ class TenantMiddleware(BaseHTTPMiddleware):
 
         return None
 
+    def _get_from_cache(self, cache_key: str) -> dict | None:
+        """Get item from cache if not expired."""
+        if cache_key not in self._tenant_cache:
+            return None
+
+        data, timestamp = self._tenant_cache[cache_key]
+        if (datetime.now(timezone.utc) - timestamp).total_seconds() > TENANT_CACHE_TTL:
+            # Entry expired, remove it
+            del self._tenant_cache[cache_key]
+            return None
+
+        return data
+
+    def _set_cache(self, cache_key: str, data: dict) -> None:
+        """Set item in cache with timestamp."""
+        # SECURITY: Prevent unbounded cache growth
+        if len(self._tenant_cache) >= TENANT_CACHE_MAX_SIZE:
+            # Remove oldest entries (simple eviction)
+            self._cleanup_expired_entries()
+            # If still too large, clear oldest 10%
+            if len(self._tenant_cache) >= TENANT_CACHE_MAX_SIZE:
+                sorted_keys = sorted(
+                    self._tenant_cache.keys(),
+                    key=lambda k: self._tenant_cache[k][1]
+                )
+                for key in sorted_keys[:len(sorted_keys) // 10]:
+                    del self._tenant_cache[key]
+
+        self._tenant_cache[cache_key] = (data, datetime.now(timezone.utc))
+
+    def _cleanup_expired_entries(self) -> int:
+        """Remove expired cache entries. Returns count of removed entries."""
+        now = datetime.now(timezone.utc)
+        expired = [
+            key for key, (_, timestamp) in self._tenant_cache.items()
+            if (now - timestamp).total_seconds() > TENANT_CACHE_TTL
+        ]
+        for key in expired:
+            del self._tenant_cache[key]
+        return len(expired)
+
     async def _get_tenant_by_id(self, tenant_id: str) -> dict | None:
         """Look up tenant by account ID."""
         # Check cache first
         cache_key = f"id:{tenant_id}"
-        if cache_key in self._tenant_cache:
-            return self._tenant_cache[cache_key]
+        cached = self._get_from_cache(cache_key)
+        if cached:
+            return cached
 
         # Query database
         from nexus.database import async_session_maker
@@ -108,7 +157,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
                         "account_id": settings.account_id,
                         "settings": self._settings_to_dict(settings),
                     }
-                    self._tenant_cache[cache_key] = tenant_info
+                    self._set_cache(cache_key, tenant_info)
                     return tenant_info
             except (ValueError, Exception):
                 pass
@@ -118,8 +167,9 @@ class TenantMiddleware(BaseHTTPMiddleware):
     async def _get_tenant_by_subdomain(self, subdomain: str) -> dict | None:
         """Look up tenant by subdomain."""
         cache_key = f"subdomain:{subdomain}"
-        if cache_key in self._tenant_cache:
-            return self._tenant_cache[cache_key]
+        cached = self._get_from_cache(cache_key)
+        if cached:
+            return cached
 
         from nexus.database import async_session_maker
         from nexus.tenants.models import TenantSettings
@@ -138,7 +188,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
                     "account_id": settings.account_id,
                     "settings": self._settings_to_dict(settings),
                 }
-                self._tenant_cache[cache_key] = tenant_info
+                self._set_cache(cache_key, tenant_info)
                 return tenant_info
 
         return None
@@ -146,8 +196,9 @@ class TenantMiddleware(BaseHTTPMiddleware):
     async def _get_tenant_by_custom_domain(self, domain: str) -> dict | None:
         """Look up tenant by custom domain."""
         cache_key = f"domain:{domain}"
-        if cache_key in self._tenant_cache:
-            return self._tenant_cache[cache_key]
+        cached = self._get_from_cache(cache_key)
+        if cached:
+            return cached
 
         from nexus.database import async_session_maker
         from nexus.tenants.models import TenantSettings
@@ -166,7 +217,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
                     "account_id": settings.account_id,
                     "settings": self._settings_to_dict(settings),
                 }
-                self._tenant_cache[cache_key] = tenant_info
+                self._set_cache(cache_key, tenant_info)
                 return tenant_info
 
         return None

@@ -219,9 +219,20 @@ class WebhookService:
         if not endpoint:
             return None
 
-        # Apply updates
+        # SECURITY: Whitelist of allowed fields to prevent mass assignment
+        # Sensitive fields like 'secret', 'agent_id' are excluded
+        allowed_fields = {
+            "name",
+            "url",
+            "events",
+            "is_active",
+            "retry_config",
+            "custom_headers",
+        }
+
+        # Apply updates only for allowed fields
         for key, value in updates.items():
-            if value is not None and hasattr(endpoint, key):
+            if key in allowed_fields and value is not None:
                 setattr(endpoint, key, value)
 
         await self.db.commit()

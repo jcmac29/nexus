@@ -216,17 +216,28 @@ class IdentityService:
         if not api_key_string.startswith(settings.api_key_prefix):
             return None
 
-        # Get all active API keys (we need to check against hashes)
+        # SECURITY: Extract key prefix for efficient filtering
+        # This prevents timing attacks and improves performance
+        # Key format: {prefix}{raw_key} where prefix is stored as {prefix}{first_8_chars}...
+        prefix_len = len(settings.api_key_prefix)
+        if len(api_key_string) < prefix_len + 8:
+            return None
+
+        # Build the stored prefix format: "nx_abc12345..."
+        lookup_prefix = f"{settings.api_key_prefix}{api_key_string[prefix_len:prefix_len+8]}..."
+
+        # Filter by prefix first to narrow down candidates (typically 1 result)
         result = await self.db.execute(
             select(APIKey, Agent)
             .join(Agent)
             .where(
                 Agent.status == AgentStatus.ACTIVE,
+                APIKey.key_prefix == lookup_prefix,
             )
         )
 
         for api_key, agent in result.all():
-            # Check if key matches hash
+            # Verify the full key hash
             if bcrypt.checkpw(api_key_string.encode(), api_key.key_hash.encode()):
                 # Check expiration
                 if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
