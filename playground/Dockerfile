@@ -1,4 +1,4 @@
-# Nexus Playground - Production Build
+# Playground - Production Dockerfile
 FROM node:20-alpine AS build
 
 WORKDIR /app
@@ -7,7 +7,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
-# Copy source and build
+# Build application
 COPY . .
 RUN npm run build
 
