@@ -223,6 +223,10 @@ async def add_template(
     if not connector:
         raise HTTPException(status_code=404, detail="Connector not found")
 
+    # SECURITY: Verify ownership before modification
+    if connector.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this connector")
+
     connector.query_templates[request.name] = {
         "query": request.query,
         "description": request.description,
@@ -293,6 +297,10 @@ async def activate_connector(
     if not connector:
         raise HTTPException(status_code=404, detail="Connector not found")
 
+    # SECURITY: Verify ownership before modification
+    if connector.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this connector")
+
     connector.is_active = True
     await db.commit()
 
@@ -311,6 +319,10 @@ async def deactivate_connector(
 
     if not connector:
         raise HTTPException(status_code=404, detail="Connector not found")
+
+    # SECURITY: Verify ownership before modification
+    if connector.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this connector")
 
     connector.is_active = False
     await db.commit()

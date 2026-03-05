@@ -2,15 +2,72 @@
 
 from __future__ import annotations
 
+import ipaddress
+import logging
 import time
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.connectors.models import Connector, ConnectorExecution, ConnectorType
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_connector_url(url: str) -> bool:
+    """
+    Validate connector URL to prevent SSRF attacks.
+
+    Returns True if URL is safe, False otherwise.
+    """
+    if not url:
+        return False
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+
+    # Must be http or https
+    if parsed.scheme not in ("http", "https"):
+        return False
+
+    # Must have a hostname
+    if not parsed.hostname:
+        return False
+
+    hostname = parsed.hostname.lower()
+
+    # Block localhost and common local hostnames
+    blocked_hosts = {
+        "localhost", "127.0.0.1", "::1", "0.0.0.0",
+        "metadata.google.internal", "169.254.169.254",
+        "metadata.internal", "kubernetes.default",
+    }
+    if hostname in blocked_hosts:
+        logger.warning(f"Blocked connector URL to: {hostname}")
+        return False
+
+    # Block private IP ranges
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            logger.warning(f"Blocked connector URL to private IP: {hostname}")
+            return False
+    except ValueError:
+        # Not an IP address, it's a hostname
+        pass
+
+    # Block internal-looking hostnames
+    if any(internal in hostname for internal in [".internal", ".local", ".localhost", ".svc.cluster"]):
+        logger.warning(f"Blocked connector URL to internal host: {hostname}")
+        return False
+
+    return True
 
 
 class ConnectorService:
@@ -33,6 +90,12 @@ class ConnectorService:
         **kwargs,
     ) -> Connector:
         """Create a new connector."""
+        # SECURITY: Validate URLs for REST/GraphQL connectors to prevent SSRF
+        if connector_type in [ConnectorType.REST, ConnectorType.GRAPHQL]:
+            url = connection_config.get("base_url") or connection_config.get("endpoint")
+            if url and not _validate_connector_url(url):
+                raise ValueError("Invalid connector URL: must be a public HTTP/HTTPS endpoint")
+
         connector = Connector(
             name=name,
             slug=slug,
@@ -240,6 +303,10 @@ class ConnectorService:
         config = connector.connection_config
         base_url = config.get("base_url", "")
 
+        # SECURITY: Validate URL to prevent SSRF (defense in depth)
+        if not _validate_connector_url(base_url):
+            raise ValueError("Invalid connector URL: must be a public HTTP/HTTPS endpoint")
+
         headers = dict(config.get("headers", {}))
 
         # Add authentication
@@ -283,6 +350,10 @@ class ConnectorService:
 
         config = connector.connection_config
         endpoint = config.get("endpoint", "")
+
+        # SECURITY: Validate URL to prevent SSRF (defense in depth)
+        if not _validate_connector_url(endpoint):
+            raise ValueError("Invalid connector URL: must be a public HTTP/HTTPS endpoint")
 
         headers = dict(config.get("headers", {}))
         headers["Content-Type"] = "application/json"
@@ -341,6 +412,11 @@ class ConnectorService:
                 import httpx
                 config = connector.connection_config
                 base_url = config.get("base_url", config.get("endpoint", ""))
+
+                # SECURITY: Validate URL to prevent SSRF
+                if not _validate_connector_url(base_url):
+                    return {"status": "error", "message": "Invalid URL - SSRF protection"}
+
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     response = await client.get(base_url)
                     status = "healthy" if response.status_code < 400 else "unhealthy"
