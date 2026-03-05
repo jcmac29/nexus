@@ -178,6 +178,14 @@ async def get_download_url(
 ):
     """Get a presigned download URL."""
     service = StorageService(db)
+
+    # SECURITY: Verify ownership or public access before generating URL
+    file = await service.get_file(UUID(file_id))
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+    if file.owner_id != agent.id and not file.is_public:
+        raise HTTPException(status_code=403, detail="Not authorized to access this file")
+
     url = await service.get_presigned_url(UUID(file_id), expires_in=expires_in)
     return {"url": url, "expires_in": expires_in}
 
@@ -191,9 +199,17 @@ async def copy_file(
 ):
     """Copy a file."""
     service = StorageService(db)
+
+    # SECURITY: Verify ownership or public access before copying
+    file = await service.get_file(UUID(file_id))
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+    if file.owner_id != agent.id and not file.is_public:
+        raise HTTPException(status_code=403, detail="Not authorized to copy this file")
+
     new_file = await service.copy_file(
         file_id=UUID(file_id),
-        new_owner_id=UUID(request.new_owner_id) if request.new_owner_id else None,
+        new_owner_id=UUID(request.new_owner_id) if request.new_owner_id else agent.id,
         new_bucket=request.new_bucket,
     )
 
@@ -213,6 +229,14 @@ async def delete_file(
 ):
     """Delete a file."""
     service = StorageService(db)
+
+    # SECURITY: Verify ownership before deletion
+    file = await service.get_file(UUID(file_id))
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+    if file.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this file")
+
     await service.delete_file(UUID(file_id), soft=not permanent)
     return {"status": "deleted"}
 

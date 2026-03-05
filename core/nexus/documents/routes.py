@@ -235,6 +235,14 @@ async def delete_document(
 ):
     """Delete a document."""
     service = DocumentService(db)
+
+    # SECURITY: Check owner permission before deletion
+    has_access = await service.check_permission(
+        UUID(document_id), agent.id, PermissionLevel.OWNER
+    )
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Delete access denied - owner permission required")
+
     await service.delete_document(UUID(document_id), soft=not permanent)
     return {"status": "deleted" if permanent else "trashed"}
 
