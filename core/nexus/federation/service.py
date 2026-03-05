@@ -144,8 +144,43 @@ class FederationService:
         await self.session.commit()
         await self.session.refresh(peer)
 
-        # TODO: Call back to peer to complete handshake
+        # Call back to peer to complete handshake
+        await self._complete_handshake(peer, our_peer_id, our_secret)
         return peer
+
+    async def _complete_handshake(
+        self,
+        peer: FederatedPeer,
+        our_peer_id: str,
+        our_secret: str,
+    ) -> bool:
+        """Complete the federation handshake by sending our credentials to the peer."""
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                # Build auth headers using their credentials
+                headers = self._build_auth_headers(peer)
+                url = f"{peer.endpoint_url}/api/v1/federation/handshake/complete"
+
+                response = await client.post(
+                    url,
+                    headers=headers,
+                    json={
+                        "peer_id": our_peer_id,
+                        "secret": our_secret,
+                        "endpoint_url": "",  # Will be filled by the caller
+                    },
+                )
+                response.raise_for_status()
+
+                logger.info(f"Federation handshake completed with peer: {peer.name}")
+                return True
+
+        except Exception as e:
+            logger.error(f"Failed to complete federation handshake with {peer.name}: {e}")
+            # Mark peer as pending since handshake failed
+            peer.status = PeerStatus.PENDING
+            await self.session.commit()
+            return False
 
     async def get_peer(self, peer_id: UUID) -> FederatedPeer | None:
         """Get a peer by ID."""
@@ -327,20 +362,51 @@ class FederationService:
         if not peer:
             return []
 
-        # Return only published capabilities
-        # TODO: Query actual published capabilities
+        # Return published capabilities from this instance
+        from nexus.discovery.service import DiscoveryService
+        from nexus.discovery.models import Capability, CapabilityStatus
+        from nexus.identity.models import Agent, AgentStatus
+
+        discovery = DiscoveryService(self.session)
+
+        # Query all active capabilities that are marked for federation
+        result = await self.session.execute(
+            select(Capability, Agent)
+            .join(Agent, Capability.agent_id == Agent.id)
+            .where(
+                Capability.status == CapabilityStatus.ACTIVE,
+                Agent.status == AgentStatus.ACTIVE,
+                # Only return capabilities marked as federated
+                Capability.metadata_["federated"].astext == "true",
+            )
+            .limit(100)
+        )
+
+        capabilities = []
+        for cap, agent in result.all():
+            capabilities.append({
+                "agent_slug": agent.slug,
+                "name": cap.name,
+                "description": cap.description,
+                "category": cap.category,
+                "tags": cap.tags,
+                "input_schema": cap.input_schema,
+                "output_schema": cap.output_schema,
+            })
+
         await self._log_request(
             peer_id=peer.id,
             direction="inbound",
             request_type="discover",
             status="completed",
+            response_summary={"count": len(capabilities)},
         )
 
         peer.requests_received += 1
         peer.last_seen_at = datetime.now(timezone.utc)
         await self.session.commit()
 
-        return []  # Return published capabilities
+        return capabilities
 
     async def handle_inbound_invocation(
         self,
@@ -373,17 +439,107 @@ class FederationService:
             },
         )
 
-        # TODO: Check if capability requires approval
-        # TODO: Route to actual capability handler
+        # Find the capability and check if it requires approval
+        from nexus.discovery.models import Capability, CapabilityStatus
+        from nexus.identity.models import Agent, AgentStatus
 
-        peer.requests_received += 1
-        peer.last_seen_at = datetime.now(timezone.utc)
-        await self.session.commit()
+        result = await self.session.execute(
+            select(Capability, Agent)
+            .join(Agent, Capability.agent_id == Agent.id)
+            .where(
+                Agent.slug == agent_slug,
+                Agent.status == AgentStatus.ACTIVE,
+                Capability.name == capability_name,
+                Capability.status == CapabilityStatus.ACTIVE,
+            )
+        )
+        row = result.first()
 
-        return {
-            "status": "pending",
-            "request_id": str(request_log.id),
-        }
+        if not row:
+            request_log.status = "failed"
+            request_log.response_summary = {"error": "Capability not found"}
+            await self.session.commit()
+            return {"error": "Capability not found"}
+
+        capability, agent = row
+
+        # Check if capability is federated
+        cap_meta = capability.metadata_ or {}
+        if not cap_meta.get("federated"):
+            request_log.status = "failed"
+            request_log.response_summary = {"error": "Capability not available for federation"}
+            await self.session.commit()
+            return {"error": "Capability not available for federation"}
+
+        # Check trust level requirements
+        required_trust = cap_meta.get("required_trust_level", "standard")
+        if required_trust == "full" and peer.trust_level != TrustLevel.FULL:
+            request_log.status = "failed"
+            request_log.response_summary = {"error": "Insufficient trust level"}
+            await self.session.commit()
+            return {"error": "Insufficient trust level"}
+
+        # Check if approval is required
+        requires_approval = cap_meta.get("requires_approval", True)
+
+        if requires_approval:
+            peer.requests_received += 1
+            peer.last_seen_at = datetime.now(timezone.utc)
+            await self.session.commit()
+            return {
+                "status": "pending_approval",
+                "request_id": str(request_log.id),
+                "message": "Request requires manual approval",
+            }
+
+        # Execute the capability directly
+        return await self._execute_inbound_capability(
+            peer, capability, agent, input_data, request_log
+        )
+
+    async def _execute_inbound_capability(
+        self,
+        peer: FederatedPeer,
+        capability,
+        agent,
+        input_data: dict,
+        request_log: FederationRequest,
+    ) -> dict:
+        """Execute an inbound capability invocation."""
+        try:
+            # If capability has an endpoint, call it
+            if capability.endpoint_url:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    response = await client.post(
+                        capability.endpoint_url,
+                        json=input_data,
+                        headers={"X-Nexus-Federation": "true"},
+                    )
+                    response.raise_for_status()
+                    result = response.json()
+            else:
+                # No endpoint - capability is informational only
+                result = {
+                    "status": "completed",
+                    "message": "Capability executed (no endpoint configured)",
+                }
+
+            request_log.status = "completed"
+            request_log.completed_at = datetime.now(timezone.utc)
+            request_log.response_summary = {"status": "completed"}
+            await self.session.commit()
+
+            peer.requests_received += 1
+            peer.last_seen_at = datetime.now(timezone.utc)
+            await self.session.commit()
+
+            return {"status": "completed", "output": result}
+
+        except Exception as e:
+            request_log.status = "failed"
+            request_log.response_summary = {"error": str(e)}
+            await self.session.commit()
+            return {"error": str(e)}
 
     # --- Helper Methods ---
 
