@@ -172,6 +172,15 @@ async def execute_tool(
     """Execute a tool."""
     service = ToolService(db)
 
+    # SECURITY: Verify tool is active before execution
+    # Note: Tools may be shared across agents, so we verify the tool is active
+    # Access control for shared tools should be handled in the service layer
+    tool = await service.get_tool(UUID(tool_id))
+    if not tool:
+        raise HTTPException(status_code=404, detail="Tool not found")
+    if not tool.is_active:
+        raise HTTPException(status_code=400, detail="Tool is not active")
+
     try:
         execution = await service.execute_tool(
             tool_id=UUID(tool_id),
@@ -206,6 +215,8 @@ async def execute_tool_by_slug(
 
     if not tool:
         raise HTTPException(status_code=404, detail="Tool not found")
+    if not tool.is_active:
+        raise HTTPException(status_code=400, detail="Tool is not active")
 
     try:
         execution = await service.execute_tool(

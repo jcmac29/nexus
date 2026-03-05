@@ -99,6 +99,14 @@ async def confirm_upload(
 ):
     """Confirm a presigned upload completed."""
     service = StorageService(db)
+
+    # SECURITY: Verify ownership before confirming upload
+    file = await service.get_file(UUID(file_id))
+    if not file:
+        raise HTTPException(status_code=404, detail="File not found")
+    if file.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to confirm this upload")
+
     await service.confirm_upload(
         file_id=UUID(file_id),
         size_bytes=request.size_bytes,
@@ -152,6 +160,10 @@ async def get_file(
     stored_file = await service.get_file(UUID(file_id))
     if not stored_file:
         raise HTTPException(status_code=404, detail="File not found")
+
+    # SECURITY: Verify ownership or public access before returning metadata
+    if stored_file.owner_id != agent.id and not stored_file.is_public:
+        raise HTTPException(status_code=403, detail="Not authorized to view this file")
 
     return {
         "id": str(stored_file.id),

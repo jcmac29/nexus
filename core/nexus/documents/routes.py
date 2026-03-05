@@ -257,6 +257,13 @@ async def share_document(
     """Share a document."""
     service = DocumentService(db)
 
+    # SECURITY: Check owner permission before sharing
+    has_access = await service.check_permission(
+        UUID(document_id), agent.id, PermissionLevel.OWNER
+    )
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Only owners can share documents")
+
     permission_map = {
         "owner": PermissionLevel.OWNER,
         "editor": PermissionLevel.EDITOR,
@@ -288,6 +295,14 @@ async def get_versions(
 ):
     """Get version history."""
     service = DocumentService(db)
+
+    # SECURITY: Check permission before viewing version history
+    has_access = await service.check_permission(
+        UUID(document_id), agent.id, PermissionLevel.VIEWER
+    )
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     versions = await service.get_versions(UUID(document_id), limit)
 
     return [
@@ -311,6 +326,14 @@ async def restore_version(
 ):
     """Restore a previous version."""
     service = DocumentService(db)
+
+    # SECURITY: Check editor permission before restoring version
+    has_access = await service.check_permission(
+        UUID(document_id), agent.id, PermissionLevel.EDITOR
+    )
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Edit access denied")
+
     doc = await service.restore_version(
         UUID(document_id), version_number, agent.id
     )
@@ -330,6 +353,14 @@ async def get_comments(
 ):
     """Get document comments."""
     service = DocumentService(db)
+
+    # SECURITY: Check permission before viewing comments
+    has_access = await service.check_permission(
+        UUID(document_id), agent.id, PermissionLevel.VIEWER
+    )
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Access denied")
+
     comments = await service.get_comments(UUID(document_id), include_resolved)
 
     return [
@@ -355,6 +386,13 @@ async def add_comment(
 ):
     """Add a comment to a document."""
     service = DocumentService(db)
+
+    # SECURITY: Check commenter permission before adding comment
+    has_access = await service.check_permission(
+        UUID(document_id), agent.id, PermissionLevel.COMMENTER
+    )
+    if not has_access:
+        raise HTTPException(status_code=403, detail="Comment access denied")
 
     comment = await service.add_comment(
         document_id=UUID(document_id),

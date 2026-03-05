@@ -74,6 +74,12 @@ async def get_relationship(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Relationship not found",
         )
+    # SECURITY: Only allow viewing relationships created by this agent
+    if relationship.created_by_agent_id != agent.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view this relationship",
+        )
     return relationship
 
 
@@ -116,6 +122,7 @@ async def get_node_edges(
     - **direction**: Filter by edge direction (outgoing, incoming, or both)
     - **relationship_types**: Filter by relationship types
     """
+    # SECURITY: Pass agent_id to filter to relationships this agent can access
     edges, total = await service.get_edges(
         node_type=node_type,
         node_id=node_id,
@@ -123,6 +130,7 @@ async def get_node_edges(
         relationship_types=relationship_types,
         limit=limit,
         offset=offset,
+        agent_id=agent.id,
     )
 
     edge_responses = []
@@ -159,12 +167,14 @@ async def traverse_graph(
 
     Returns all reachable nodes up to max_depth, along with the relationships traversed.
     """
+    # SECURITY: Pass agent_id to filter traversal to accessible relationships
     nodes, relationships = await service.traverse(
         start_type=data.start_type,
         start_id=data.start_id,
         max_depth=data.max_depth,
         relationship_types=data.relationship_types,
         direction=data.direction,
+        agent_id=agent.id,
     )
 
     return TraversalResponse(
@@ -193,12 +203,14 @@ async def find_path(
 
     Uses breadth-first search to find the shortest path.
     """
+    # SECURITY: Pass agent_id to filter path search to accessible relationships
     path = await service.find_path(
         source_type=data.source_type,
         source_id=data.source_id,
         target_type=data.target_type,
         target_id=data.target_id,
         max_depth=data.max_depth,
+        agent_id=agent.id,
     )
 
     if path is None:
@@ -225,11 +237,13 @@ async def get_related_memories(
 
     Returns memories connected via graph relationships, with relationship info.
     """
+    # SECURITY: Pass agent_id to filter to memories this agent can access
     related = await service.get_related_memories(
         memory_id=memory_id,
         relationship_types=relationship_types,
         max_depth=max_depth,
         limit=limit,
+        agent_id=agent.id,
     )
 
     return RelatedMemoriesResponse(

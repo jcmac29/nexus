@@ -71,9 +71,13 @@ async def get_my_health(
 @router.get("/agents/{agent_id}", response_model=HealthResponse)
 async def get_agent_health(
     agent_id: UUID,
+    agent: Agent = Depends(get_current_agent),
     service: HealthService = Depends(get_health_service),
 ):
     """Get health status for a specific agent."""
+    # SECURITY: Only allow viewing own health status
+    if agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this agent's health")
     health = await service.get_health(agent_id)
     return _health_to_response(health)
 
@@ -108,11 +112,23 @@ async def acknowledge_alert(
     alert_id: UUID,
     agent: Agent = Depends(get_current_agent),
     service: HealthService = Depends(get_health_service),
+    db: AsyncSession = Depends(get_db),
 ):
     """Acknowledge a health alert."""
-    alert = await service.acknowledge_alert(alert_id)
+    from sqlalchemy import select
+    from nexus.health.models import HealthAlert
+
+    # SECURITY: Verify ownership before acknowledging
+    result = await db.execute(
+        select(HealthAlert).where(HealthAlert.id == alert_id)
+    )
+    alert = result.scalar_one_or_none()
     if not alert:
         raise HTTPException(status_code=404, detail="Alert not found")
+    if alert.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to acknowledge this alert")
+
+    alert = await service.acknowledge_alert(alert_id)
     return {"status": "acknowledged"}
 
 

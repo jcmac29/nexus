@@ -134,7 +134,8 @@ async def get_similar(
 ):
     """Find similar content."""
     service = SearchService(db)
-    results = await service.get_similar(UUID(content_id), limit=limit)
+    # SECURITY: Pass owner_id to filter results to content the agent can access
+    results = await service.get_similar(UUID(content_id), owner_id=agent.id, limit=limit)
     return {"results": results}
 
 
@@ -203,6 +204,7 @@ async def remove_from_index(
 
     ct = content_type_map.get(content_type)
     if ct:
-        await service.remove_from_index(ct, UUID(content_id))
+        # SECURITY: Pass owner_id to ensure only owned content is removed
+        await service.remove_from_index(ct, UUID(content_id), owner_id=agent.id)
 
     return {"status": "removed"}
