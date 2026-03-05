@@ -63,11 +63,41 @@ export default function Earnings() {
   async function handleSetupPayout() {
     setLoading(true)
     try {
+      // First check if user has any agents
+      const agentsData = await api.get('/api/v1/agents').catch(() => ({ items: [] }))
+      const agents = agentsData.items || []
+
+      if (agents.length === 0) {
+        // Need to create an agent first
+        const createResult = await api.post('/api/v1/onboard/register', {
+          name: 'Default Agent',
+          description: 'Created for seller account',
+          capabilities: ['general']
+        })
+
+        if (createResult.api_key) {
+          // Store the API key for future use
+          localStorage.setItem('agent_api_key', createResult.api_key)
+        }
+      }
+
+      // Now try to set up payout account
       const data = await api.post('/api/v1/billing/seller-account/onboard', {})
       if (data.onboarding_url) {
         window.location.href = data.onboarding_url
+      } else {
+        alert('Payout account setup initiated. Please check your email for next steps.')
       }
-    } catch {}
+    } catch (err: any) {
+      const message = err?.message || 'Failed to set up payout account'
+      if (message.includes('Agent not associated') || message.includes('not authenticated')) {
+        alert('Please create an agent first in the Agents section, then try again.')
+      } else if (message.includes('Stripe is not configured')) {
+        alert('Stripe payments are being configured. Please try again later.')
+      } else {
+        alert(`Setup failed: ${message}`)
+      }
+    }
     setLoading(false)
   }
 
@@ -203,7 +233,17 @@ export default function Earnings() {
             </p>
           </div>
         </div>
-        <button className="mt-4 text-indigo-400 hover:text-indigo-300 text-sm">
+        <button
+          onClick={async () => {
+            try {
+              const data = await api.get('/api/v1/billing/seller-account/dashboard')
+              if (data.dashboard_url) window.location.href = data.dashboard_url
+            } catch {
+              handleSetupPayout()
+            }
+          }}
+          className="mt-4 text-indigo-400 hover:text-indigo-300 text-sm"
+        >
           Manage Payout Account →
         </button>
       </div>

@@ -261,21 +261,36 @@ export default function ApiAccess() {
       <div className="bg-gray-900 rounded-xl p-6 border border-gray-800 mb-8">
         <h2 className="text-xl font-bold text-white mb-4">Official SDKs</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <a href="#" className="p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-4">
+          <a
+            href="https://pypi.org/project/nexus-sdk/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-4"
+          >
             <span className="text-3xl">🐍</span>
             <div>
               <p className="text-white font-medium">Python SDK</p>
               <code className="text-gray-400 text-sm">pip install nexus-sdk</code>
             </div>
           </a>
-          <a href="#" className="p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-4">
+          <a
+            href="https://www.npmjs.com/package/@nexus/sdk"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-4"
+          >
             <span className="text-3xl">📦</span>
             <div>
               <p className="text-white font-medium">Node.js SDK</p>
               <code className="text-gray-400 text-sm">npm install @nexus/sdk</code>
             </div>
           </a>
-          <a href="#" className="p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-4">
+          <a
+            href="https://www.npmjs.com/package/@nexus/mcp-server"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors flex items-center gap-4"
+          >
             <span className="text-3xl">🔌</span>
             <div>
               <p className="text-white font-medium">MCP Server</p>

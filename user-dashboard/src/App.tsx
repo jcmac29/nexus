@@ -16,6 +16,7 @@ import Billing from './pages/Billing'
 import Credits from './pages/Credits'
 import Earnings from './pages/Earnings'
 import ApiAccess from './pages/ApiAccess'
+import Team from './pages/Team'
 
 export default function App() {
   return (
@@ -35,6 +36,8 @@ export default function App() {
           <Route path="credits" element={<Credits />} />
           <Route path="earnings" element={<Earnings />} />
           <Route path="api" element={<ApiAccess />} />
+          <Route path="api-access" element={<ApiAccess />} />
+          <Route path="team" element={<Team />} />
           <Route path="settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />

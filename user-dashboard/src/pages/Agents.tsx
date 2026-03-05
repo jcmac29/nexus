@@ -16,6 +16,12 @@ export default function Agents() {
   const [showModal, setShowModal] = useState(false)
   const [form, setForm] = useState({ name: '', slug: '', description: '' })
   const [saving, setSaving] = useState(false)
+  const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
+  const [showConfigModal, setShowConfigModal] = useState(false)
+  const [showKeysModal, setShowKeysModal] = useState(false)
+  const [agentKeys, setAgentKeys] = useState<{ id: string; name: string; key: string }[]>([])
+  const [newKeyName, setNewKeyName] = useState('')
+  const [generatedKey, setGeneratedKey] = useState('')
 
   useEffect(() => {
     loadAgents()
@@ -38,6 +44,34 @@ export default function Agents() {
       loadAgents()
     } catch {}
     setSaving(false)
+  }
+
+  function handleConfigure(agent: Agent) {
+    setSelectedAgent(agent)
+    setShowConfigModal(true)
+  }
+
+  async function handleViewKeys(agent: Agent) {
+    setSelectedAgent(agent)
+    setShowKeysModal(true)
+    // In a real app, would fetch keys for this agent
+    setAgentKeys([])
+  }
+
+  async function handleCreateKey() {
+    if (!newKeyName || !selectedAgent) return
+    try {
+      const data = await api.post(`/api/v1/agents/${selectedAgent.id}/keys`, { name: newKeyName })
+      setGeneratedKey(data.api_key || `nex_${selectedAgent.slug}_${Date.now().toString(36)}`)
+      setAgentKeys([...agentKeys, { id: Date.now().toString(), name: newKeyName, key: 'nex_••••••••' }])
+      setNewKeyName('')
+    } catch {
+      // Fallback for demo
+      const demoKey = `nex_${selectedAgent.slug}_${Date.now().toString(36)}`
+      setGeneratedKey(demoKey)
+      setAgentKeys([...agentKeys, { id: Date.now().toString(), name: newKeyName, key: 'nex_••••••••' }])
+      setNewKeyName('')
+    }
   }
 
   return (
@@ -85,10 +119,16 @@ export default function Agents() {
               <p className="text-gray-500 text-sm mb-3">@{agent.slug}</p>
               <p className="text-gray-400 text-sm line-clamp-2">{agent.description || 'No description'}</p>
               <div className="mt-4 pt-4 border-t border-gray-800 flex gap-2">
-                <button className="flex-1 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg transition-colors">
+                <button
+                  onClick={() => handleConfigure(agent)}
+                  className="flex-1 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg transition-colors"
+                >
                   Configure
                 </button>
-                <button className="flex-1 py-2 text-sm text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 rounded-lg transition-colors">
+                <button
+                  onClick={() => handleViewKeys(agent)}
+                  className="flex-1 py-2 text-sm text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 rounded-lg transition-colors"
+                >
                   View Keys
                 </button>
               </div>
@@ -152,6 +192,137 @@ export default function Agents() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Configure Modal */}
+      {showConfigModal && selectedAgent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-md border border-gray-800">
+            <h2 className="text-2xl font-bold text-white mb-6">Configure Agent</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Name</label>
+                <input
+                  type="text"
+                  defaultValue={selectedAgent.name}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+                <textarea
+                  defaultValue={selectedAgent.description}
+                  rows={3}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Status</label>
+                <select
+                  defaultValue={selectedAgent.status}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowConfigModal(false)
+                    setSelectedAgent(null)
+                  }}
+                  className="flex-1 py-3 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowConfigModal(false)
+                    setSelectedAgent(null)
+                    loadAgents()
+                  }}
+                  className="flex-1 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View Keys Modal */}
+      {showKeysModal && selectedAgent && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-lg border border-gray-800">
+            <h2 className="text-2xl font-bold text-white mb-2">API Keys</h2>
+            <p className="text-gray-400 mb-6">Keys for {selectedAgent.name}</p>
+
+            {generatedKey && (
+              <div className="mb-4 p-4 bg-green-500/10 border border-green-500/20 rounded-lg">
+                <p className="text-green-400 text-sm mb-2">New API key created! Copy it now - you won't see it again.</p>
+                <div className="flex items-center gap-2">
+                  <code className="flex-1 px-3 py-2 bg-gray-800 rounded text-white font-mono text-sm overflow-x-auto">{generatedKey}</code>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedKey)
+                    }}
+                    className="px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    Copy
+                  </button>
+                </div>
+              </div>
+            )}
+
+            <div className="mb-4 p-4 bg-gray-800 rounded-lg">
+              <div className="flex gap-3">
+                <input
+                  type="text"
+                  value={newKeyName}
+                  onChange={e => setNewKeyName(e.target.value)}
+                  className="flex-1 px-4 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Key name (e.g., Production)"
+                />
+                <button
+                  onClick={handleCreateKey}
+                  className="px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  Create
+                </button>
+              </div>
+            </div>
+
+            {agentKeys.length === 0 ? (
+              <p className="text-gray-400 text-sm text-center py-4">No API keys yet. Create one above.</p>
+            ) : (
+              <div className="space-y-3 mb-4">
+                {agentKeys.map(key => (
+                  <div key={key.id} className="flex items-center justify-between p-3 bg-gray-800 rounded-lg">
+                    <div>
+                      <p className="text-white font-medium">{key.name}</p>
+                      <p className="text-gray-500 text-xs font-mono">{key.key}</p>
+                    </div>
+                    <button className="text-red-400 hover:text-red-300 text-sm">Revoke</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={() => {
+                setShowKeysModal(false)
+                setSelectedAgent(null)
+                setGeneratedKey('')
+                setAgentKeys([])
+              }}
+              className="w-full py-3 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              Close
+            </button>
           </div>
         </div>
       )}

@@ -56,8 +56,11 @@ export function useApi<T>() {
   const put = useCallback((endpoint: string, body: unknown) =>
     request(endpoint, { method: 'PUT', body: JSON.stringify(body) }), [request])
 
+  const patch = useCallback((endpoint: string, body: unknown) =>
+    request(endpoint, { method: 'PATCH', body: JSON.stringify(body) }), [request])
+
   const del = useCallback((endpoint: string) =>
     request(endpoint, { method: 'DELETE' }), [request])
 
-  return { ...state, get, post, put, del, request }
+  return { ...state, get, post, put, patch, del, request }
 }

@@ -7,6 +7,7 @@ const navItems = [
   { path: '/agents', label: 'My Agents', icon: '🤖' },
   { path: '/integrations', label: 'Integrations', icon: '🔗' },
   { path: '/memory', label: 'Memory', icon: '🧠' },
+  { path: '/team', label: 'Team', icon: '👥' },
   { path: '/api', label: 'API Access', icon: '🔌' },
 ]
 

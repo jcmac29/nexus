@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useApi } from '../hooks/useApi'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -12,6 +13,7 @@ interface Stats {
 export default function Dashboard() {
   const { user } = useAuth()
   const api = useApi<any>()
+  const navigate = useNavigate()
   const [stats, setStats] = useState<Stats>({ agents: 0, memories: 0, integrations: 0, apiCalls: 0 })
 
   useEffect(() => {
@@ -65,21 +67,30 @@ export default function Dashboard() {
       <div className="bg-gray-900 rounded-xl p-6 border border-gray-800 mb-8">
         <h2 className="text-xl font-bold text-white mb-4">Quick Actions</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <button className="flex items-center gap-4 p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors">
+          <button
+            onClick={() => navigate('/agents')}
+            className="flex items-center gap-4 p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
+          >
             <span className="text-2xl">🤖</span>
             <div className="text-left">
               <p className="text-white font-medium">Create Agent</p>
               <p className="text-gray-400 text-sm">Deploy a new AI agent</p>
             </div>
           </button>
-          <button className="flex items-center gap-4 p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors">
+          <button
+            onClick={() => navigate('/integrations')}
+            className="flex items-center gap-4 p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
+          >
             <span className="text-2xl">🔗</span>
             <div className="text-left">
               <p className="text-white font-medium">Add Integration</p>
               <p className="text-gray-400 text-sm">Connect an API</p>
             </div>
           </button>
-          <button className="flex items-center gap-4 p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors">
+          <button
+            onClick={() => navigate('/api-access')}
+            className="flex items-center gap-4 p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors"
+          >
             <span className="text-2xl">📚</span>
             <div className="text-left">
               <p className="text-white font-medium">View Docs</p>

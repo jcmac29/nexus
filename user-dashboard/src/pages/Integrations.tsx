@@ -8,6 +8,8 @@ interface Integration {
   description: string
   connected: boolean
   config?: Record<string, string>
+  isCustom?: boolean
+  baseUrl?: string
 }
 
 const AVAILABLE_INTEGRATIONS: Omit<Integration, 'id' | 'connected' | 'config'>[] = [
@@ -28,8 +30,12 @@ const AVAILABLE_INTEGRATIONS: Omit<Integration, 'id' | 'connected' | 'config'>[]
 export default function Integrations() {
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [showModal, setShowModal] = useState(false)
+  const [showCustomModal, setShowCustomModal] = useState(false)
+  const [showConfigModal, setShowConfigModal] = useState(false)
   const [selectedIntegration, setSelectedIntegration] = useState<typeof AVAILABLE_INTEGRATIONS[0] | null>(null)
+  const [configIntegration, setConfigIntegration] = useState<Integration | null>(null)
   const [apiKey, setApiKey] = useState('')
+  const [customForm, setCustomForm] = useState({ name: '', baseUrl: '', apiKey: '', description: '' })
 
   function handleConnect() {
     if (!selectedIntegration || !apiKey) return
@@ -49,6 +55,31 @@ export default function Integrations() {
 
   function handleDisconnect(id: string) {
     setIntegrations(integrations.filter(i => i.id !== id))
+  }
+
+  function handleAddCustomApi() {
+    if (!customForm.name || !customForm.baseUrl || !customForm.apiKey) return
+
+    const newIntegration: Integration = {
+      id: Date.now().toString(),
+      name: customForm.name,
+      type: 'custom',
+      icon: '🔧',
+      description: customForm.description || customForm.baseUrl,
+      connected: true,
+      isCustom: true,
+      baseUrl: customForm.baseUrl,
+      config: { apiKey: customForm.apiKey.slice(0, 8) + '...' }
+    }
+
+    setIntegrations([...integrations, newIntegration])
+    setShowCustomModal(false)
+    setCustomForm({ name: '', baseUrl: '', apiKey: '', description: '' })
+  }
+
+  function handleConfigure(integration: Integration) {
+    setConfigIntegration(integration)
+    setShowConfigModal(true)
   }
 
   return (
@@ -78,7 +109,10 @@ export default function Integrations() {
                   </span>
                 </div>
                 <div className="flex gap-2">
-                  <button className="flex-1 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg transition-colors">
+                  <button
+                    onClick={() => handleConfigure(integration)}
+                    className="flex-1 py-2 text-sm text-gray-400 hover:text-white bg-gray-800 rounded-lg transition-colors"
+                  >
                     Configure
                   </button>
                   <button
@@ -128,7 +162,10 @@ export default function Integrations() {
           <span className="text-4xl mb-4 block">🔧</span>
           <h3 className="text-lg font-bold text-white mb-2">Custom Integration</h3>
           <p className="text-gray-400 text-sm mb-4">Connect any REST API with custom configuration</p>
-          <button className="px-6 py-3 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors">
+          <button
+            onClick={() => setShowCustomModal(true)}
+            className="px-6 py-3 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
+          >
             Add Custom API
           </button>
         </div>
@@ -178,6 +215,138 @@ export default function Integrations() {
                   className="flex-1 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
                   Connect
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom API Modal */}
+      {showCustomModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-md border border-gray-800">
+            <div className="flex items-center gap-4 mb-6">
+              <span className="text-4xl">🔧</span>
+              <div>
+                <h2 className="text-2xl font-bold text-white">Add Custom API</h2>
+                <p className="text-gray-400">Connect any REST API endpoint</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Integration Name</label>
+                <input
+                  type="text"
+                  value={customForm.name}
+                  onChange={e => setCustomForm({ ...customForm, name: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="My Custom API"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Base URL</label>
+                <input
+                  type="url"
+                  value={customForm.baseUrl}
+                  onChange={e => setCustomForm({ ...customForm, baseUrl: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="https://api.example.com/v1"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">API Key</label>
+                <input
+                  type="password"
+                  value={customForm.apiKey}
+                  onChange={e => setCustomForm({ ...customForm, apiKey: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Enter your API key"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Description (optional)</label>
+                <input
+                  type="text"
+                  value={customForm.description}
+                  onChange={e => setCustomForm({ ...customForm, description: e.target.value })}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="What does this API do?"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowCustomModal(false)
+                    setCustomForm({ name: '', baseUrl: '', apiKey: '', description: '' })
+                  }}
+                  className="flex-1 py-3 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAddCustomApi}
+                  disabled={!customForm.name || !customForm.baseUrl || !customForm.apiKey}
+                  className="flex-1 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+                >
+                  Add Integration
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Configure Integration Modal */}
+      {showConfigModal && configIntegration && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-md border border-gray-800">
+            <div className="flex items-center gap-4 mb-6">
+              <span className="text-4xl">{configIntegration.icon}</span>
+              <div>
+                <h2 className="text-2xl font-bold text-white">{configIntegration.name}</h2>
+                <p className="text-gray-400">Configuration</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="p-4 bg-gray-800 rounded-lg">
+                <p className="text-gray-400 text-sm mb-1">Status</p>
+                <p className="text-green-400 font-medium">Connected</p>
+              </div>
+
+              <div className="p-4 bg-gray-800 rounded-lg">
+                <p className="text-gray-400 text-sm mb-1">API Key</p>
+                <p className="text-white font-mono">{configIntegration.config?.apiKey || '••••••••'}</p>
+              </div>
+
+              {configIntegration.isCustom && configIntegration.baseUrl && (
+                <div className="p-4 bg-gray-800 rounded-lg">
+                  <p className="text-gray-400 text-sm mb-1">Base URL</p>
+                  <p className="text-white font-mono text-sm">{configIntegration.baseUrl}</p>
+                </div>
+              )}
+
+              <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                <p className="text-yellow-400 text-sm">
+                  To update your API key, disconnect and reconnect this integration.
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowConfigModal(false)
+                    setConfigIntegration(null)
+                  }}
+                  className="flex-1 py-3 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  Close
                 </button>
               </div>
             </div>

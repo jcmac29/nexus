@@ -133,7 +133,17 @@ export default function Billing() {
               </p>
             </div>
             <div className="flex gap-3">
-              <button className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors">
+              <button
+                onClick={async () => {
+                  try {
+                    const data = await api.post('/api/v1/billing/portal', {})
+                    if (data.portal_url) window.location.href = data.portal_url
+                  } catch {
+                    alert('Unable to open billing portal. Please try again.')
+                  }
+                }}
+                className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"
+              >
                 Manage Payment
               </button>
               {!subscription.cancel_at_period_end && (
@@ -236,9 +246,12 @@ export default function Billing() {
         <p className="text-gray-400 mb-4">
           Unlimited resources, dedicated infrastructure, custom SLA, and 24/7 support.
         </p>
-        <button className="px-8 py-3 bg-white text-gray-900 font-medium rounded-lg hover:bg-gray-100 transition-colors">
+        <a
+          href="mailto:sales@nexus.ai?subject=Enterprise%20Inquiry"
+          className="inline-block px-8 py-3 bg-white text-gray-900 font-medium rounded-lg hover:bg-gray-100 transition-colors"
+        >
           Contact Sales
-        </button>
+        </a>
       </div>
     </div>
   )
