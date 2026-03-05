@@ -548,13 +548,16 @@ class WebhookService:
         body_json = json.dumps(body, sort_keys=True)
         signature = self._sign_payload(endpoint.secret, timestamp, body_json)
 
+        # SECURITY: Sanitize custom headers (defense in depth)
+        safe_custom_headers = sanitize_custom_headers(endpoint.custom_headers)
+
         headers = {
             "Content-Type": "application/json",
             "X-Nexus-Event": "webhook.test",
             "X-Nexus-Delivery": "test",
             "X-Nexus-Timestamp": timestamp,
             "X-Nexus-Signature": signature,
-            **endpoint.custom_headers,
+            **safe_custom_headers,
         }
 
         start_time = time.time()

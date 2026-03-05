@@ -155,6 +155,10 @@ async def run_job_now(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    # SECURITY: Verify ownership before execution
+    if job.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to run this job")
+
     execution = await service.execute_job(job)
 
     return {
@@ -174,6 +178,15 @@ async def pause_job(
 ):
     """Pause a scheduled job."""
     service = SchedulerService(db)
+    job = await service.get_job(UUID(job_id))
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # SECURITY: Verify ownership before modification
+    if job.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this job")
+
     await service.pause_job(UUID(job_id))
     return {"status": "paused"}
 
@@ -186,6 +199,15 @@ async def resume_job(
 ):
     """Resume a paused job."""
     service = SchedulerService(db)
+    job = await service.get_job(UUID(job_id))
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # SECURITY: Verify ownership before modification
+    if job.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this job")
+
     await service.resume_job(UUID(job_id))
     return {"status": "resumed"}
 
@@ -198,6 +220,15 @@ async def delete_job(
 ):
     """Delete a scheduled job."""
     service = SchedulerService(db)
+    job = await service.get_job(UUID(job_id))
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    # SECURITY: Verify ownership before deletion
+    if job.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to delete this job")
+
     await service.delete_job(UUID(job_id))
     return {"status": "deleted"}
 

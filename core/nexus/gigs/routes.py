@@ -434,6 +434,14 @@ async def provision_workers(
 ):
     """Provision worker instances for a pool."""
     service = GigService(db)
+
+    # SECURITY: Verify ownership before provisioning
+    pool = await service.get_worker_pool(pool_id)
+    if not pool:
+        raise HTTPException(status_code=404, detail="Pool not found")
+    if pool.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this pool")
+
     try:
         instances = await service.provision_workers(pool_id)
         await db.commit()
@@ -455,6 +463,14 @@ async def scale_pool(
 ):
     """Scale a worker pool up or down."""
     service = GigService(db)
+
+    # SECURITY: Verify ownership before scaling
+    pool = await service.get_worker_pool(pool_id)
+    if not pool:
+        raise HTTPException(status_code=404, detail="Pool not found")
+    if pool.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this pool")
+
     try:
         pool = await service.scale_pool(pool_id, target_workers)
         await db.commit()
@@ -475,6 +491,14 @@ async def terminate_pool(
 ):
     """Terminate all workers in a pool."""
     service = GigService(db)
+
+    # SECURITY: Verify ownership before termination
+    pool = await service.get_worker_pool(pool_id)
+    if not pool:
+        raise HTTPException(status_code=404, detail="Pool not found")
+    if pool.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this pool")
+
     await service.terminate_pool(pool_id)
     await db.commit()
     return {"status": "terminated"}
