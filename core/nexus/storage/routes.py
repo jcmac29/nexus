@@ -44,7 +44,15 @@ async def upload_file(
     """Upload a file directly."""
     service = StorageService(db)
 
+    # SECURITY: Enforce file size limit to prevent DoS attacks
+    MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
     contents = await file.read()
+
+    if len(contents) > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large. Maximum size is {MAX_FILE_SIZE // (1024*1024)}MB.",
+        )
     stored_file = await service.upload_file(
         file_data=contents,
         filename=file.filename or "unnamed",
@@ -219,9 +227,17 @@ async def copy_file(
     if file.owner_id != agent.id and not file.is_public:
         raise HTTPException(status_code=403, detail="Not authorized to copy this file")
 
+    # SECURITY: Users can only copy files to their own ownership
+    # Allowing arbitrary owner assignment would enable cross-agent file ownership manipulation
+    if request.new_owner_id and UUID(request.new_owner_id) != agent.id:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot assign copied file to a different owner.",
+        )
+
     new_file = await service.copy_file(
         file_id=UUID(file_id),
-        new_owner_id=UUID(request.new_owner_id) if request.new_owner_id else agent.id,
+        new_owner_id=agent.id,  # Always use current agent's ID
         new_bucket=request.new_bucket,
     )
 
