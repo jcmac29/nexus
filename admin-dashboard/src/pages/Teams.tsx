@@ -1,4 +1,4 @@
-import { Plus, Users, Edit2, Trash2, ChevronDown, ChevronRight, UserPlus, UserMinus } from 'lucide-react';
+import { Plus, Users, Edit2, Trash2, ChevronDown, ChevronRight, UserPlus } from 'lucide-react';
 import { useState } from 'react';
 import DataTable from '../components/DataTable';
 import Pagination from '../components/Pagination';
