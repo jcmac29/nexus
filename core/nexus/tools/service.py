@@ -4,15 +4,62 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import ipaddress
 import json
 import time
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
 from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import select, and_
+
+
+def _validate_tool_endpoint_url(url: str) -> None:
+    """
+    Validate tool endpoint URL to prevent SSRF attacks.
+
+    SECURITY: Prevents tools from targeting internal services.
+    Raises ValueError if URL is unsafe.
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        raise ValueError("Invalid URL format")
+
+    # Must be http or https
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("Tool endpoint URL must use http or https")
+
+    # Must have a hostname
+    if not parsed.hostname:
+        raise ValueError("Tool endpoint URL must have a hostname")
+
+    hostname = parsed.hostname.lower()
+
+    # Block localhost and common local hostnames
+    blocked_hosts = {
+        "localhost", "127.0.0.1", "::1", "0.0.0.0",
+        "metadata.google.internal", "169.254.169.254",  # Cloud metadata
+        "metadata.internal", "kubernetes.default",
+    }
+    if hostname in blocked_hosts:
+        raise ValueError("Tool endpoint URL cannot point to localhost or internal services")
+
+    # Block private IP ranges
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise ValueError("Tool endpoint URL cannot point to private or reserved IP addresses")
+    except ValueError:
+        # Not an IP address, it's a hostname - check for suspicious patterns
+        pass
+
+    # Block internal-looking hostnames
+    if any(internal in hostname for internal in [".internal", ".local", ".localhost", ".svc.cluster"]):
+        raise ValueError("Tool endpoint URL cannot point to internal services")
 
 # SECURITY: Use sandboxed Jinja2 environment to prevent SSTI attacks
 _jinja_env = SandboxedEnvironment(
@@ -51,6 +98,10 @@ class ToolService:
         **kwargs,
     ) -> Tool:
         """Create a new tool definition."""
+        # SECURITY: Validate endpoint URL at creation time to prevent SSRF
+        if endpoint_url:
+            _validate_tool_endpoint_url(endpoint_url)
+
         tool = Tool(
             name=name,
             slug=slug,
@@ -232,6 +283,12 @@ class ToolService:
             credentials = f"{tool.auth_config.get('username', '')}:{tool.auth_config.get('password', '')}"
             encoded = base64.b64encode(credentials.encode()).decode()
             headers["Authorization"] = f"Basic {encoded}"
+
+        # SECURITY: Validate endpoint URL to prevent SSRF attacks
+        try:
+            _validate_tool_endpoint_url(tool.endpoint_url)
+        except ValueError as e:
+            raise ValueError(f"Invalid tool endpoint: {e}")
 
         # Make request with retries
         last_error = None

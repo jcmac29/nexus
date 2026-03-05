@@ -361,7 +361,18 @@ class OrchestrationService:
                 return value[key]
             elif isinstance(node, ast.Attribute):
                 value = _eval(node.value)
-                return getattr(value, node.attr)
+                # SECURITY: Restrict attribute access to prevent code execution
+                # Disallow dunder attributes which can lead to introspection attacks
+                if node.attr.startswith('_'):
+                    raise ValueError(f"Access to private attributes is not allowed: {node.attr}")
+                # Only allow attribute access on dict-like objects for common methods
+                allowed_attrs = {'get', 'keys', 'values', 'items'}
+                if isinstance(value, dict) and node.attr in allowed_attrs:
+                    return getattr(value, node.attr)
+                elif isinstance(value, dict):
+                    # For dicts, prefer subscript access - attribute names become key lookups
+                    return value.get(node.attr)
+                raise ValueError(f"Attribute access not allowed on type: {type(value).__name__}")
             elif isinstance(node, ast.Compare):
                 left = _eval(node.left)
                 for op, comparator in zip(node.ops, node.comparators):
