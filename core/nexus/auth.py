@@ -97,12 +97,24 @@ def require_scopes(*required_scopes: str):
             api_key = api_key[7:]
 
         service = IdentityService(db)
-        agent = await service.verify_api_key(api_key)
+        agent, api_key_record = await service.verify_api_key_with_record(api_key)
 
-        if not agent:
+        if not agent or not api_key_record:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid API key",
             )
+
+        # SECURITY: Actually validate the required scopes
+        if required_scopes:
+            agent_scopes = set(api_key_record.scopes or [])
+            required_set = set(required_scopes)
+
+            # Check if agent has at least one of the required scopes
+            if not agent_scopes.intersection(required_set):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Insufficient permissions",
+                )
 
     return check_scopes

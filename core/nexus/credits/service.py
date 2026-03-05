@@ -151,8 +151,20 @@ class CreditService:
         amount: Decimal,
         job_id: "UUID",
     ) -> CreditReservation:
-        """Reserve credits for an in-progress job."""
+        """Reserve credits for an in-progress job.
+
+        Uses SELECT FOR UPDATE to prevent race conditions.
+        """
+        # First get or create balance (without lock)
         balance = await self.get_or_create_balance(owner_type, owner_id)
+
+        # Now lock the balance row for this transaction
+        result = await self.session.execute(
+            select(CreditBalance)
+            .where(CreditBalance.id == balance.id)
+            .with_for_update()  # SECURITY: Lock row to prevent race condition
+        )
+        balance = result.scalar_one()
 
         if balance.available_balance < amount:
             raise InsufficientCreditsError(
@@ -270,15 +282,30 @@ class CreditService:
         amount: Decimal,
         description: str = None,
     ) -> tuple[CreditTransaction, CreditTransaction]:
-        """Transfer credits between accounts."""
+        """Transfer credits between accounts.
+
+        Uses SELECT FOR UPDATE to prevent race conditions.
+        """
+        # Get or create balances first
         from_balance = await self.get_or_create_balance(from_owner_type, from_owner_id)
+        to_balance = await self.get_or_create_balance(to_owner_type, to_owner_id)
+
+        # Lock both balance rows (in consistent order to prevent deadlocks)
+        balance_ids = sorted([from_balance.id, to_balance.id])
+        result = await self.session.execute(
+            select(CreditBalance)
+            .where(CreditBalance.id.in_(balance_ids))
+            .with_for_update()  # SECURITY: Lock rows to prevent race condition
+            .order_by(CreditBalance.id)
+        )
+        locked_balances = {b.id: b for b in result.scalars().all()}
+        from_balance = locked_balances[from_balance.id]
+        to_balance = locked_balances[to_balance.id]
 
         if from_balance.available_balance < amount:
             raise InsufficientCreditsError(
                 f"Insufficient credits for transfer"
             )
-
-        to_balance = await self.get_or_create_balance(to_owner_type, to_owner_id)
 
         # Deduct from sender
         from_balance.available_balance -= amount

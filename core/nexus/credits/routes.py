@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 from typing import Optional
 from uuid import UUID
@@ -10,11 +11,31 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from nexus.auth import get_current_agent
 from nexus.database import get_db
 from nexus.credits.service import CreditService, InsufficientCreditsError
 from nexus.credits.models import TransactionType
+from nexus.identity.models import Agent
 
 router = APIRouter(prefix="/credits", tags=["credits"])
+logger = logging.getLogger(__name__)
+
+
+def _verify_ownership(
+    owner_type: str,
+    owner_id: UUID,
+    agent: Agent,
+) -> None:
+    """Verify the requesting agent has access to this balance."""
+    # Agents can only access their own balance
+    if owner_type == "agent" and owner_id != agent.id:
+        logger.warning(
+            f"Unauthorized credit access attempt: agent {agent.id} tried to access {owner_id}"
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="You can only access your own balance"
+        )
 
 
 # --- Request/Response Models ---
@@ -72,9 +93,13 @@ class PackageResponse(BaseModel):
 async def get_balance(
     owner_type: str,
     owner_id: UUID,
+    agent: Agent = Depends(get_current_agent),
     session: AsyncSession = Depends(get_db),
 ):
-    """Get credit balance for an owner."""
+    """Get credit balance for an owner. Requires authentication."""
+    # SECURITY: Verify ownership
+    _verify_ownership(owner_type, owner_id, agent)
+
     service = CreditService(session)
     balance = await service.get_or_create_balance(owner_type, owner_id)
 
@@ -94,9 +119,13 @@ async def add_credits(
     owner_type: str,
     owner_id: UUID,
     request: AddCreditsRequest,
+    agent: Agent = Depends(get_current_agent),
     session: AsyncSession = Depends(get_db),
 ):
-    """Add credits to a balance (purchase)."""
+    """Add credits to a balance (purchase). Requires authentication."""
+    # SECURITY: Verify ownership
+    _verify_ownership(owner_type, owner_id, agent)
+
     service = CreditService(session)
 
     # In production, this would process payment first
@@ -123,9 +152,13 @@ async def transfer_credits(
     request: TransferRequest,
     from_owner_type: str = Query(...),
     from_owner_id: UUID = Query(...),
+    agent: Agent = Depends(get_current_agent),
     session: AsyncSession = Depends(get_db),
 ):
-    """Transfer credits between accounts."""
+    """Transfer credits between accounts. Requires authentication."""
+    # SECURITY: Verify sender ownership
+    _verify_ownership(from_owner_type, from_owner_id, agent)
+
     service = CreditService(session)
 
     try:
@@ -146,8 +179,8 @@ async def transfer_credits(
             "to_transaction": to_tx.to_dict(),
         }
 
-    except InsufficientCreditsError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except InsufficientCreditsError:
+        raise HTTPException(status_code=400, detail="Insufficient credits for transfer")
 
 
 @router.post("/payout/{owner_type}/{owner_id}")
@@ -155,9 +188,13 @@ async def request_payout(
     owner_type: str,
     owner_id: UUID,
     request: PayoutRequest,
+    agent: Agent = Depends(get_current_agent),
     session: AsyncSession = Depends(get_db),
 ):
-    """Request a payout of earnings."""
+    """Request a payout of earnings. Requires authentication."""
+    # SECURITY: Verify ownership
+    _verify_ownership(owner_type, owner_id, agent)
+
     service = CreditService(session)
 
     try:
@@ -175,10 +212,10 @@ async def request_payout(
             "message": f"Payout of ${request.amount} requested. Processing within 3-5 business days.",
         }
 
-    except InsufficientCreditsError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except InsufficientCreditsError:
+        raise HTTPException(status_code=400, detail="Insufficient balance for payout")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Minimum payout is $10.00")
 
 
 @router.get("/transactions/{owner_type}/{owner_id}")
@@ -188,9 +225,13 @@ async def get_transactions(
     limit: int = Query(50, le=100),
     offset: int = 0,
     transaction_type: Optional[str] = None,
+    agent: Agent = Depends(get_current_agent),
     session: AsyncSession = Depends(get_db),
 ):
-    """Get transaction history."""
+    """Get transaction history. Requires authentication."""
+    # SECURITY: Verify ownership
+    _verify_ownership(owner_type, owner_id, agent)
+
     service = CreditService(session)
 
     tx_type = None

@@ -67,9 +67,11 @@ class TaskStatus(str, enum.Enum):
 
 
 def generate_join_code() -> str:
-    """Generate a 6-character join code."""
-    chars = string.ascii_uppercase + string.digits
-    return "".join(secrets.choice(chars) for _ in range(6))
+    """Generate a secure join code with high entropy.
+
+    Uses 16 URL-safe characters (~96 bits of entropy) to prevent brute-force attacks.
+    """
+    return secrets.token_urlsafe(12)  # 12 bytes = 16 base64 chars
 
 
 class Swarm(Base):
@@ -80,7 +82,7 @@ class Swarm(Base):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     name: Mapped[str] = mapped_column(String(255))
     join_code: Mapped[str] = mapped_column(
-        String(6), unique=True, index=True, default=generate_join_code
+        String(24), unique=True, index=True, default=generate_join_code
     )
     owner_agent_id: Mapped[UUID] = mapped_column(ForeignKey("agents.id"))
     status: Mapped[SwarmStatus] = mapped_column(

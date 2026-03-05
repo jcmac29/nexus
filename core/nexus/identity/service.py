@@ -198,6 +198,21 @@ class IdentityService:
         Returns:
             Agent if key is valid, None otherwise
         """
+        result = await self.verify_api_key_with_record(api_key_string)
+        return result[0] if result else None
+
+    async def verify_api_key_with_record(
+        self, api_key_string: str
+    ) -> tuple[Agent, APIKey] | None:
+        """
+        Verify an API key and return both the agent and API key record.
+
+        Returns:
+            Tuple of (Agent, APIKey) if key is valid, None otherwise
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+
         if not api_key_string.startswith(settings.api_key_prefix):
             return None
 
@@ -215,11 +230,13 @@ class IdentityService:
             if bcrypt.checkpw(api_key_string.encode(), api_key.key_hash.encode()):
                 # Check expiration
                 if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
+                    logger.warning(f"Expired API key used: {api_key.key_prefix}")
                     return None
 
                 # Update last used
                 api_key.last_used_at = datetime.now(timezone.utc)
-                return agent
+                logger.debug(f"API key verified: {api_key.key_prefix}")
+                return agent, api_key
 
         return None
 

@@ -386,18 +386,25 @@ def admin_create(
 
     async def run():
         import asyncpg
+        from urllib.parse import urlparse, unquote
 
         settings = get_settings()
-        # Convert asyncpg URL to connection params
-        db_url = settings.database_url.replace("postgresql+asyncpg://", "")
-        user_pass, host_db = db_url.split("@")
-        user, passwd = user_pass.split(":")
-        host_port, database = host_db.split("/")
-        host = host_port.split(":")[0]
-        port = int(host_port.split(":")[1]) if ":" in host_port else 5432
+        # SECURITY: Use proper URL parsing instead of string splitting
+        # This handles special characters in passwords correctly
+        db_url = settings.database_url.replace("postgresql+asyncpg://", "postgresql://")
+        parsed = urlparse(db_url)
+
+        # Extract connection params from parsed URL
+        # unquote handles URL-encoded characters in password
+        user = unquote(parsed.username or "")
+        passwd = unquote(parsed.password or "")
+        host = parsed.hostname or "localhost"
+        port = parsed.port or 5432
+        database = parsed.path.lstrip("/").split("?")[0]  # Remove leading / and query params
 
         conn = await asyncpg.connect(
-            user=user, password=passwd, database=database, host=host, port=port
+            user=user, password=passwd, database=database, host=host, port=port,
+            ssl="require" if "ssl=require" in settings.database_url else None
         )
 
         try:
