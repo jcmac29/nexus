@@ -201,6 +201,86 @@ app.add_middleware(LoggingMiddleware)
 app.add_middleware(TracingMiddleware)
 
 
+# --- SECURITY: Global Exception Handler ---
+# Sanitize error messages in production to prevent information disclosure
+
+import logging
+from fastapi import HTTPException
+from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """
+    SECURITY: Sanitize HTTP exception details in production.
+
+    In debug mode, return full error details for debugging.
+    In production, return generic messages for 5xx errors and sanitize 4xx details.
+    """
+    # Always log the full error for debugging (server-side)
+    logger.warning(f"HTTPException: {exc.status_code} - {exc.detail}")
+
+    if settings.debug:
+        # Development: return full details
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": exc.detail},
+            headers=getattr(exc, "headers", None),
+        )
+
+    # Production: sanitize error messages
+    if exc.status_code >= 500:
+        # Server errors - never expose internal details
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={"detail": "An internal error occurred. Please try again later."},
+        )
+
+    # Client errors - check if detail might contain sensitive info
+    detail = exc.detail
+    if isinstance(detail, str):
+        # Sanitize common patterns that might leak info
+        sensitive_patterns = [
+            "traceback", "stack trace", "line ", "file \"",
+            "connection", "database", "sql", "query",
+            "password", "secret", "token", "key",
+        ]
+        detail_lower = detail.lower()
+        if any(pattern in detail_lower for pattern in sensitive_patterns):
+            detail = "Request could not be processed."
+
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": detail},
+        headers=getattr(exc, "headers", None),
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """
+    SECURITY: Catch-all handler for unhandled exceptions.
+
+    Never expose exception details to clients in production.
+    """
+    logger.exception(f"Unhandled exception: {exc}")
+
+    if settings.debug:
+        # Development: show full error for debugging
+        return JSONResponse(
+            status_code=500,
+            content={"detail": str(exc)},
+        )
+
+    # Production: generic error message
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal error occurred. Please try again later."},
+    )
+
+
 # --- Health Check ---
 
 
