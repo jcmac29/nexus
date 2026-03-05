@@ -116,6 +116,10 @@ async def get_goal(
     if not goal:
         raise HTTPException(status_code=404, detail="Goal not found")
 
+    # SECURITY: Verify ownership before viewing goal details
+    if goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this goal")
+
     return _goal_to_response(goal)
 
 
@@ -128,6 +132,13 @@ async def update_goal(
 ) -> GoalResponse:
     """Update a goal."""
     service = GoalsService(db)
+
+    # SECURITY: Verify ownership before modification
+    goal = await service.get_goal(goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this goal")
 
     try:
         goal = await service.update_goal(
@@ -155,6 +166,13 @@ async def activate_goal(
     """Activate a goal."""
     service = GoalsService(db)
 
+    # SECURITY: Verify ownership before activation
+    goal = await service.get_goal(goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to activate this goal")
+
     try:
         goal = await service.activate_goal(goal_id)
     except ValueError as e:
@@ -171,6 +189,13 @@ async def start_goal(
 ) -> GoalResponse:
     """Start working on a goal."""
     service = GoalsService(db)
+
+    # SECURITY: Verify ownership before starting
+    goal = await service.get_goal(goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to start this goal")
 
     try:
         goal = await service.start_goal(goal_id)
@@ -189,6 +214,13 @@ async def update_progress(
 ) -> GoalResponse:
     """Update goal progress."""
     service = GoalsService(db)
+
+    # SECURITY: Verify ownership before updating progress
+    goal = await service.get_goal(goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to update progress on this goal")
 
     try:
         goal = await service.update_progress(
@@ -213,6 +245,13 @@ async def complete_goal(
     """Complete a goal."""
     service = GoalsService(db)
 
+    # SECURITY: Verify ownership before completing
+    goal = await service.get_goal(goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to complete this goal")
+
     try:
         goal = await service.complete_goal(goal_id, outcome, outcome_data)
     except ValueError as e:
@@ -231,6 +270,13 @@ async def fail_goal(
     """Mark a goal as failed."""
     service = GoalsService(db)
 
+    # SECURITY: Verify ownership before marking as failed
+    goal = await service.get_goal(goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this goal")
+
     try:
         goal = await service.fail_goal(goal_id, outcome)
     except ValueError as e:
@@ -248,6 +294,13 @@ async def cancel_goal(
 ) -> GoalResponse:
     """Cancel a goal."""
     service = GoalsService(db)
+
+    # SECURITY: Verify ownership before cancellation
+    goal = await service.get_goal(goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to cancel this goal")
 
     try:
         goal = await service.cancel_goal(goal_id, reason)
@@ -269,6 +322,13 @@ async def add_milestone(
 ) -> MilestoneResponse:
     """Add a milestone to a goal."""
     service = GoalsService(db)
+
+    # SECURITY: Verify ownership before adding milestone
+    goal = await service.get_goal(goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this goal")
 
     milestone = await service.add_milestone(
         goal_id=goal_id,
@@ -299,7 +359,22 @@ async def complete_milestone(
     db: AsyncSession = Depends(get_db),
 ) -> MilestoneResponse:
     """Complete a milestone."""
+    from sqlalchemy import select
+    from nexus.goals.models import Milestone
+
     service = GoalsService(db)
+
+    # SECURITY: Verify ownership before completing milestone
+    result = await db.execute(
+        select(Milestone).where(Milestone.id == milestone_id)
+    )
+    existing = result.scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Milestone not found")
+
+    goal = await service.get_goal(existing.goal_id)
+    if not goal or goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to complete this milestone")
 
     try:
         milestone = await service.complete_milestone(milestone_id)
@@ -331,6 +406,13 @@ async def add_blocker(
 ) -> BlockerResponse:
     """Add a blocker to a goal."""
     service = GoalsService(db)
+
+    # SECURITY: Verify ownership before adding blocker
+    goal = await service.get_goal(goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this goal")
 
     blocker = await service.add_blocker(
         goal_id=goal_id,
@@ -364,6 +446,14 @@ async def list_blockers(
 ) -> list[BlockerResponse]:
     """List blockers for a goal."""
     service = GoalsService(db)
+
+    # SECURITY: Verify ownership before viewing blockers
+    goal = await service.get_goal(goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this goal's blockers")
+
     blockers = await service.get_blockers(goal_id, include_resolved)
 
     return [
@@ -390,7 +480,22 @@ async def resolve_blocker(
     db: AsyncSession = Depends(get_db),
 ) -> BlockerResponse:
     """Resolve a blocker."""
+    from sqlalchemy import select
+    from nexus.goals.models import Blocker
+
     service = GoalsService(db)
+
+    # SECURITY: Verify ownership before resolving blocker
+    result = await db.execute(
+        select(Blocker).where(Blocker.id == blocker_id)
+    )
+    existing = result.scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Blocker not found")
+
+    goal = await service.get_goal(existing.goal_id)
+    if not goal or goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to resolve this blocker")
 
     try:
         blocker = await service.resolve_blocker(blocker_id, request.resolution)
@@ -422,6 +527,13 @@ async def delegate_goal(
 ) -> DelegationResponse:
     """Delegate part of a goal to another agent."""
     service = GoalsService(db)
+
+    # SECURITY: Verify ownership before delegating
+    goal = await service.get_goal(goal_id)
+    if not goal:
+        raise HTTPException(status_code=404, detail="Goal not found")
+    if goal.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to delegate from this goal")
 
     delegation = await service.delegate(
         goal_id=goal_id,

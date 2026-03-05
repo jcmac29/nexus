@@ -135,6 +135,13 @@ async def update_budget(
     """Update a budget."""
     service = BudgetsService(db)
 
+    # SECURITY: Verify ownership before modification
+    budget = await service.get_budget(budget_id)
+    if not budget:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    if budget.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this budget")
+
     try:
         budget = await service.update_budget(
             budget_id=budget_id,
@@ -157,6 +164,13 @@ async def reset_budget(
 ) -> BudgetResponse:
     """Reset a budget for new period."""
     service = BudgetsService(db)
+
+    # SECURITY: Verify ownership before modification
+    budget = await service.get_budget(budget_id)
+    if not budget:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    if budget.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to reset this budget")
 
     try:
         budget = await service.reset_budget(budget_id)
@@ -234,6 +248,19 @@ async def consume_reservation(
     db: AsyncSession = Depends(get_db),
 ) -> ReservationResponse:
     """Consume a reservation."""
+    from sqlalchemy import select
+    from nexus.budgets.models import Reservation
+
+    # SECURITY: Verify ownership before consuming
+    result = await db.execute(
+        select(Reservation).where(Reservation.id == reservation_id)
+    )
+    existing = result.scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+    if existing.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to consume this reservation")
+
     service = BudgetsService(db)
 
     try:
@@ -262,6 +289,19 @@ async def release_reservation(
     db: AsyncSession = Depends(get_db),
 ) -> ReservationResponse:
     """Release a reservation without consuming."""
+    from sqlalchemy import select
+    from nexus.budgets.models import Reservation
+
+    # SECURITY: Verify ownership before releasing
+    result = await db.execute(
+        select(Reservation).where(Reservation.id == reservation_id)
+    )
+    existing = result.scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Reservation not found")
+    if existing.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to release this reservation")
+
     service = BudgetsService(db)
 
     try:
@@ -290,6 +330,14 @@ async def get_usage_history(
 ) -> list[UsageRecordResponse]:
     """Get usage history for a budget."""
     service = BudgetsService(db)
+
+    # SECURITY: Verify ownership before viewing usage
+    budget = await service.get_budget(budget_id)
+    if not budget:
+        raise HTTPException(status_code=404, detail="Budget not found")
+    if budget.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this budget's usage")
+
     records = await service.get_usage_history(budget_id, limit)
 
     return [

@@ -208,6 +208,19 @@ async def decide_improvement(
     db: AsyncSession = Depends(get_db),
 ) -> ImprovementResponse:
     """Accept or reject an improvement suggestion."""
+    from sqlalchemy import select
+    from nexus.learning.models import Improvement
+
+    # SECURITY: Verify ownership before modifying improvement
+    result = await db.execute(
+        select(Improvement).where(Improvement.id == improvement_id)
+    )
+    existing = result.scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=404, detail="Improvement not found")
+    if existing.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this improvement")
+
     service = LearningService(db)
 
     try:
