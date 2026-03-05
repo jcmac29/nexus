@@ -20,8 +20,8 @@ services:
       - STORAGE_ACCESS_KEY=${STORAGE_ACCESS_KEY:-nexus}
       - STORAGE_SECRET_KEY=${STORAGE_SECRET_KEY:?Set STORAGE_SECRET_KEY in .env}
       - STORAGE_BUCKET=nexus-media
-      - ENVIRONMENT=production
-      - DEBUG=false
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - DEBUG=${DEBUG:-false}
       - LOG_LEVEL=INFO
     depends_on:
       db:
