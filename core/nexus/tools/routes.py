@@ -240,6 +240,14 @@ async def list_executions(
     from sqlalchemy import select
     from nexus.tools.models import ToolExecution
 
+    # SECURITY: Verify ownership before viewing executions
+    service = ToolService(db)
+    tool = await service.get_tool(UUID(tool_id))
+    if not tool:
+        raise HTTPException(status_code=404, detail="Tool not found")
+    if tool.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this tool's executions")
+
     result = await db.execute(
         select(ToolExecution)
         .where(ToolExecution.tool_id == UUID(tool_id))
@@ -269,6 +277,14 @@ async def health_check_tool(
 ):
     """Perform health check on a tool."""
     service = ToolService(db)
+
+    # SECURITY: Verify ownership before health check
+    tool = await service.get_tool(UUID(tool_id))
+    if not tool:
+        raise HTTPException(status_code=404, detail="Tool not found")
+    if tool.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to health check this tool")
+
     result = await service.health_check(UUID(tool_id))
     return result
 

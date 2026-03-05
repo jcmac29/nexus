@@ -182,6 +182,13 @@ async def run_workflow(
     service: WorkflowService = Depends(get_workflow_service),
 ):
     """Execute a workflow."""
+    # SECURITY: Verify ownership or public access before running
+    workflow = await service.get_workflow(workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.owner_agent_id != agent.id and not workflow.is_public:
+        raise HTTPException(status_code=403, detail="Not authorized to run this workflow")
+
     try:
         run = await service.run_workflow(
             workflow_id=workflow_id,
@@ -201,6 +208,13 @@ async def list_workflow_runs(
     service: WorkflowService = Depends(get_workflow_service),
 ):
     """List runs for a workflow."""
+    # SECURITY: Verify ownership or public access before viewing runs
+    workflow = await service.get_workflow(workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.owner_agent_id != agent.id and not workflow.is_public:
+        raise HTTPException(status_code=403, detail="Not authorized to view runs for this workflow")
+
     runs = await service.list_runs(workflow_id=workflow_id, limit=limit)
     return [_run_to_response(r) for r in runs]
 
@@ -215,6 +229,14 @@ async def get_workflow_run(
     run = await service.get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
+
+    # SECURITY: Verify ownership or public access before viewing run details
+    workflow = await service.get_workflow(run.workflow_id)
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    if workflow.owner_agent_id != agent.id and not workflow.is_public:
+        raise HTTPException(status_code=403, detail="Not authorized to view this run")
+
     return _run_to_response(run)
 
 
