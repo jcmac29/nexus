@@ -4,11 +4,14 @@ import asyncio
 import fnmatch
 import hashlib
 import hmac
+import ipaddress
 import json
+import logging
 import secrets
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlparse
 from uuid import UUID
 
 import httpx
@@ -21,6 +24,93 @@ from nexus.webhooks.models import (
     WebhookDeliveryLog,
     WebhookEndpoint,
 )
+
+logger = logging.getLogger(__name__)
+
+# SECURITY: Blocked header names that could be used maliciously
+BLOCKED_HEADERS = {
+    "host", "authorization", "cookie", "set-cookie", "proxy-authorization",
+    "x-forwarded-for", "x-real-ip", "x-forwarded-host", "x-forwarded-proto",
+    "transfer-encoding", "content-length", "connection", "keep-alive",
+}
+
+
+def validate_webhook_url(url: str) -> None:
+    """
+    Validate webhook URL to prevent SSRF attacks.
+
+    Raises ValueError if URL is unsafe.
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        raise ValueError("Invalid URL format")
+
+    # Must be http or https
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError("Webhook URL must use http or https")
+
+    # Must have a hostname
+    if not parsed.hostname:
+        raise ValueError("Webhook URL must have a hostname")
+
+    hostname = parsed.hostname.lower()
+
+    # Block localhost and common local hostnames
+    blocked_hosts = {
+        "localhost", "127.0.0.1", "::1", "0.0.0.0",
+        "metadata.google.internal", "169.254.169.254",  # Cloud metadata
+        "metadata.internal", "kubernetes.default",
+    }
+    if hostname in blocked_hosts:
+        raise ValueError("Webhook URL cannot point to localhost or internal services")
+
+    # Block private IP ranges
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            raise ValueError("Webhook URL cannot point to private or reserved IP addresses")
+    except ValueError:
+        # Not an IP address, it's a hostname - check for suspicious patterns
+        pass
+
+    # Block internal-looking hostnames
+    if any(internal in hostname for internal in [".internal", ".local", ".localhost", ".svc.cluster"]):
+        raise ValueError("Webhook URL cannot point to internal services")
+
+
+def sanitize_custom_headers(headers: dict) -> dict:
+    """
+    Sanitize custom webhook headers to prevent injection.
+
+    Returns filtered headers dict.
+    """
+    if not headers:
+        return {}
+
+    sanitized = {}
+    for key, value in headers.items():
+        # Normalize header name
+        key_lower = key.lower().strip()
+
+        # Skip blocked headers
+        if key_lower in BLOCKED_HEADERS:
+            logger.warning(f"Blocked custom webhook header: {key}")
+            continue
+
+        # Validate header name (RFC 7230 - token chars only)
+        if not all(c.isalnum() or c in "-_" for c in key_lower):
+            logger.warning(f"Invalid webhook header name: {key}")
+            continue
+
+        # Limit header value length
+        if len(str(value)) > 4096:
+            logger.warning(f"Webhook header value too long: {key}")
+            continue
+
+        sanitized[key] = str(value)
+
+    return sanitized
 
 
 class WebhookService:
@@ -48,6 +138,12 @@ class WebhookService:
 
         Returns (endpoint, plain_secret) - secret is only shown once.
         """
+        # SECURITY: Validate webhook URL to prevent SSRF
+        validate_webhook_url(url)
+
+        # SECURITY: Sanitize custom headers
+        safe_headers = sanitize_custom_headers(custom_headers)
+
         # Generate a secure secret
         secret = secrets.token_urlsafe(32)
 
@@ -61,7 +157,7 @@ class WebhookService:
             retry_policy=retry_policy,
             max_retries=max_retries,
             timeout_seconds=timeout_seconds,
-            custom_headers=custom_headers or {},
+            custom_headers=safe_headers,
         )
         self.db.add(endpoint)
         await self.db.commit()
@@ -266,13 +362,16 @@ class WebhookService:
         # Sign payload
         signature = self._sign_payload(endpoint.secret, timestamp, body_json)
 
+        # SECURITY: Sanitize custom headers before use
+        safe_custom_headers = sanitize_custom_headers(endpoint.custom_headers)
+
         headers = {
             "Content-Type": "application/json",
             "X-Nexus-Event": log.event_type,
             "X-Nexus-Delivery": str(log.id),
             "X-Nexus-Timestamp": timestamp,
             "X-Nexus-Signature": signature,
-            **endpoint.custom_headers,
+            **safe_custom_headers,
         }
 
         start_time = time.time()

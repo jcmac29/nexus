@@ -1,5 +1,7 @@
 """Media storage API routes."""
 
+import re
+from urllib.parse import quote
 from uuid import UUID
 from typing import Annotated
 
@@ -15,6 +17,32 @@ from nexus.media.service import MediaService
 from nexus.media.models import MediaType, MediaStatus
 
 router = APIRouter(prefix="/media", tags=["media"])
+
+
+def safe_content_disposition(filename: str) -> str:
+    """
+    Generate a safe Content-Disposition header value.
+
+    Uses RFC 5987 encoding for non-ASCII characters and proper escaping.
+    """
+    # Sanitize filename - remove path separators and null bytes
+    safe_name = re.sub(r'[\x00/\\]', '_', filename)
+
+    # Remove any quotes that could break the header
+    safe_name = safe_name.replace('"', "'").replace('\n', ' ').replace('\r', ' ')
+
+    # Limit length
+    if len(safe_name) > 200:
+        ext_match = re.search(r'\.[a-zA-Z0-9]{1,10}$', safe_name)
+        ext = ext_match.group(0) if ext_match else ''
+        safe_name = safe_name[:200-len(ext)] + ext
+
+    # Use RFC 5987 encoding for the filename* parameter (handles unicode)
+    encoded_name = quote(safe_name, safe='')
+
+    # Return both filename (ASCII fallback) and filename* (UTF-8 encoded)
+    ascii_name = safe_name.encode('ascii', 'replace').decode('ascii')
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{encoded_name}"
 
 
 # --- File Security Validation ---
@@ -241,7 +269,7 @@ async def download_media(
         content=data,
         media_type=media.content_type,
         headers={
-            "Content-Disposition": f'attachment; filename="{media.filename}"',
+            "Content-Disposition": safe_content_disposition(media.filename),
             "Content-Length": str(len(data)),
         },
     )

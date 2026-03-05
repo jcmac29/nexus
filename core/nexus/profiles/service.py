@@ -113,8 +113,17 @@ class ProfileService:
         """Update agent settings."""
         settings_obj = await self.get_or_create_settings(agent_id)
 
+        # SECURITY: Whitelist of allowed fields to prevent mass assignment
+        allowed_fields = {
+            "default_model", "temperature", "max_tokens", "system_prompt",
+            "response_format", "memory_enabled", "memory_window_size",
+            "auto_summarize", "context_injection", "custom_instructions",
+            "language", "timezone", "date_format", "notifications_enabled",
+            "webhook_enabled", "rate_limit_override",
+        }
+
         for key, value in kwargs.items():
-            if hasattr(settings_obj, key) and value is not None:
+            if key in allowed_fields and hasattr(settings_obj, key) and value is not None:
                 setattr(settings_obj, key, value)
 
         await self.session.commit()
