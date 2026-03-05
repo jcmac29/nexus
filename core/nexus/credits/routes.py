@@ -284,11 +284,15 @@ async def purchase_package(
     owner_type: str = Query(...),
     owner_id: UUID = Query(...),
     payment_method_id: Optional[str] = None,
+    agent: Agent = Depends(get_current_agent),
     session: AsyncSession = Depends(get_db),
 ):
     """Purchase a credit package."""
     from sqlalchemy import select
     from nexus.credits.models import CreditPackage
+
+    # SECURITY: Verify ownership before adding credits
+    _verify_ownership(owner_type, owner_id, agent)
 
     # Get package
     result = await session.execute(

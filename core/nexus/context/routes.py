@@ -293,6 +293,13 @@ async def get_diff(
     """Get diff for a context package."""
     service = ContextService(db)
 
+    # SECURITY: Verify access before computing diff
+    # unpack_context validates the agent has access
+    try:
+        await service.unpack_context(package_id, agent.id)
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+
     try:
         diff = await service.compute_diff(package_id, previous_version)
     except ValueError as e:
