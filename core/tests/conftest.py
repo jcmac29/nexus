@@ -137,6 +137,12 @@ def settings():
     return get_settings()
 
 
+@pytest_asyncio.fixture
+async def auth_headers(authenticated_client: AsyncClient) -> dict:
+    """Get auth headers from the authenticated client."""
+    return dict(authenticated_client.headers)
+
+
 # --- Helper fixtures ---
 
 @pytest_asyncio.fixture

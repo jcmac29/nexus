@@ -135,6 +135,12 @@ class Device(Base):
     tags = Column(JSON, default=list)
     metadata_ = Column("metadata", JSON, default=dict)
 
+    # Device API Key Authentication
+    api_key_hash = Column(String(255), nullable=True)  # Hashed API key for device auth
+    api_key_prefix = Column(String(12), nullable=True, index=True)  # First 8 chars for lookup
+    api_key_last_used = Column(DateTime, nullable=True)
+    api_key_created_at = Column(DateTime, nullable=True)
+
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

@@ -81,12 +81,15 @@ async def initiate_peering(
     They use these to complete the connection.
     """
     service = FederationService(session)
-    peer, secret = await service.initiate_peering(
-        owner_agent_id=agent.id,
-        peer_name=request.peer_name,
-        peer_endpoint=request.peer_endpoint,
-        trust_level=request.trust_level,
-    )
+    try:
+        peer, secret = await service.initiate_peering(
+            owner_agent_id=agent.id,
+            peer_name=request.peer_name,
+            peer_endpoint=request.peer_endpoint,
+            trust_level=request.trust_level,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     return InitiatePeeringResponse(
         peer_id=peer.id,

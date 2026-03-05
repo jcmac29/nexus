@@ -51,18 +51,21 @@ async def create_connector(
     """Create a new connector."""
     service = ConnectorService(db)
 
-    connector = await service.create_connector(
-        name=request.name,
-        slug=request.slug,
-        connector_type=ConnectorType(request.connector_type),
-        owner_id=agent.id,
-        connection_config=request.connection_config,
-        description=request.description,
-        allowed_operations=request.allowed_operations,
-        query_templates=request.query_templates,
-        rate_limit=request.rate_limit,
-        pool_size=request.pool_size,
-    )
+    try:
+        connector = await service.create_connector(
+            name=request.name,
+            slug=request.slug,
+            connector_type=ConnectorType(request.connector_type),
+            owner_id=agent.id,
+            connection_config=request.connection_config,
+            description=request.description,
+            allowed_operations=request.allowed_operations,
+            query_templates=request.query_templates,
+            rate_limit=request.rate_limit,
+            pool_size=request.pool_size,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     return {
         "id": str(connector.id),

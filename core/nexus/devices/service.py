@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import secrets
 from datetime import datetime, timedelta
 from uuid import UUID
 import uuid as uuid_module
@@ -15,6 +17,29 @@ from nexus.devices.models import (
     Device, DeviceFleet, DeviceTelemetry, DeviceCommand, DeviceEvent, DeviceMission,
     DeviceType, DeviceProtocol, DeviceStatus, CommandPriority, CommandStatus
 )
+
+
+def _hash_api_key(api_key: str) -> str:
+    """Hash an API key using SHA-256."""
+    return hashlib.sha256(api_key.encode()).hexdigest()
+
+
+def _generate_device_api_key() -> tuple[str, str, str]:
+    """
+    Generate a device API key.
+
+    Returns:
+        tuple: (full_key, prefix, hash)
+        - full_key: The complete API key to give to device (e.g., "nex_dev_abc123...")
+        - prefix: First 8 chars for DB lookup
+        - hash: SHA-256 hash for storage
+    """
+    # Generate 32 random bytes = 64 hex chars
+    random_part = secrets.token_hex(32)
+    full_key = f"nex_dev_{random_part}"
+    prefix = full_key[:12]  # "nex_dev_xxxx"
+    key_hash = _hash_api_key(full_key)
+    return full_key, prefix, key_hash
 
 
 class DeviceGatewayService:
@@ -746,3 +771,91 @@ class DeviceGatewayService:
     def register_event_handler(self, handler: Callable):
         """Register a handler for device events."""
         self._event_handlers.append(handler)
+
+    # --- Device API Key Authentication ---
+
+    async def generate_device_api_key(self, device_id: str) -> str:
+        """
+        Generate a new API key for a device.
+
+        Returns the full API key (only shown once). The device must store this
+        securely and use it for authentication.
+        """
+        result = await self.db.execute(
+            select(Device).where(Device.device_id == device_id)
+        )
+        device = result.scalar_one_or_none()
+        if not device:
+            raise ValueError(f"Device {device_id} not found")
+
+        full_key, prefix, key_hash = _generate_device_api_key()
+
+        device.api_key_hash = key_hash
+        device.api_key_prefix = prefix
+        device.api_key_created_at = datetime.utcnow()
+        device.api_key_last_used = None
+
+        await self.db.commit()
+
+        return full_key
+
+    async def validate_device_api_key(self, api_key: str) -> Device | None:
+        """
+        Validate a device API key and return the device if valid.
+
+        This method is used for device authentication on telemetry/command endpoints.
+        """
+        if not api_key or not api_key.startswith("nex_dev_"):
+            return None
+
+        prefix = api_key[:12]
+        key_hash = _hash_api_key(api_key)
+
+        # Find device by prefix, then verify hash
+        result = await self.db.execute(
+            select(Device).where(
+                and_(
+                    Device.api_key_prefix == prefix,
+                    Device.api_key_hash == key_hash,
+                    Device.is_active == True,
+                )
+            )
+        )
+        device = result.scalar_one_or_none()
+
+        if device:
+            # Update last used timestamp
+            device.api_key_last_used = datetime.utcnow()
+            await self.db.commit()
+
+        return device
+
+    async def revoke_device_api_key(self, device_id: str) -> bool:
+        """
+        Revoke a device's API key.
+
+        The device will no longer be able to authenticate until a new key is generated.
+        """
+        result = await self.db.execute(
+            select(Device).where(Device.device_id == device_id)
+        )
+        device = result.scalar_one_or_none()
+        if not device:
+            return False
+
+        device.api_key_hash = None
+        device.api_key_prefix = None
+        device.api_key_created_at = None
+        device.api_key_last_used = None
+
+        await self.db.commit()
+        return True
+
+    async def rotate_device_api_key(self, device_id: str) -> str:
+        """
+        Rotate a device's API key (revoke old, generate new).
+
+        Returns the new API key.
+        """
+        await self.revoke_device_api_key(device_id)
+        return await self.generate_device_api_key(device_id)

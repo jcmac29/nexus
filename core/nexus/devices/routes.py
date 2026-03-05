@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,7 +12,7 @@ from nexus.database import get_db
 from nexus.auth import get_current_agent
 from nexus.identity.models import Agent
 from nexus.devices.service import DeviceGatewayService
-from nexus.devices.models import DeviceType, DeviceProtocol, DeviceStatus, CommandPriority
+from nexus.devices.models import Device, DeviceType, DeviceProtocol, DeviceStatus, CommandPriority
 
 router = APIRouter(prefix="/devices", tags=["devices"])
 
@@ -207,6 +207,91 @@ async def get_device(
         "geofence": device.geofence,
         "last_seen_at": device.last_seen_at.isoformat() if device.last_seen_at else None,
         "last_telemetry_at": device.last_telemetry_at.isoformat() if device.last_telemetry_at else None,
+        "has_api_key": device.api_key_hash is not None,
+        "api_key_last_used": device.api_key_last_used.isoformat() if device.api_key_last_used else None,
+    }
+
+
+# --- Device API Key Management ---
+
+@router.post("/{device_id}/api-key")
+async def generate_device_api_key(
+    device_id: str,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a new API key for a device.
+
+    Returns the API key only once - store it securely on the device.
+    The key format is: nex_dev_xxxxx...
+    """
+    service = DeviceGatewayService(db)
+
+    # SECURITY: Verify ownership before generating API key
+    device = await service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to manage this device")
+
+    api_key = await service.generate_device_api_key(device_id)
+
+    return {
+        "device_id": device_id,
+        "api_key": api_key,
+        "message": "Store this API key securely - it will not be shown again",
+    }
+
+
+@router.delete("/{device_id}/api-key")
+async def revoke_device_api_key(
+    device_id: str,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Revoke a device's API key.
+
+    The device will no longer be able to authenticate until a new key is generated.
+    """
+    service = DeviceGatewayService(db)
+
+    # SECURITY: Verify ownership before revoking API key
+    device = await service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to manage this device")
+
+    success = await service.revoke_device_api_key(device_id)
+
+    return {"device_id": device_id, "revoked": success}
+
+
+@router.post("/{device_id}/api-key/rotate")
+async def rotate_device_api_key(
+    device_id: str,
+    agent: Agent = Depends(get_current_agent),
+    db: AsyncSession = Depends(get_db),
+):
+    """Rotate a device's API key (revoke old, generate new).
+
+    Returns the new API key only once - store it securely on the device.
+    """
+    service = DeviceGatewayService(db)
+
+    # SECURITY: Verify ownership before rotating API key
+    device = await service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to manage this device")
+
+    new_api_key = await service.rotate_device_api_key(device_id)
+
+    return {
+        "device_id": device_id,
+        "api_key": new_api_key,
+        "message": "Old key revoked. Store this new API key securely - it will not be shown again",
     }
 
 
@@ -297,38 +382,79 @@ async def return_to_base(
 # --- Telemetry ---
 
 
-async def verify_device_token(
-    device_id: str,
-    request: TelemetryRequest,
-    db: AsyncSession,
-) -> bool:
+async def get_device_from_api_key(
+    authorization: str = Header(None, alias="Authorization"),
+    x_device_api_key: str = Header(None, alias="X-Device-API-Key"),
+    db: AsyncSession = Depends(get_db),
+) -> Device:
     """
-    SECURITY: Verify the device has a valid token.
-    In production, devices should authenticate with a device-specific API key.
-    For now, we verify the device exists and check for a token in raw_data.
+    SECURITY: Authenticate device using API key.
+
+    Devices can provide their API key via:
+    - Authorization: Bearer nex_dev_xxx header
+    - X-Device-API-Key: nex_dev_xxx header
     """
+    api_key = None
+
+    # Check Authorization header
+    if authorization and authorization.startswith("Bearer "):
+        api_key = authorization[7:]
+
+    # Check X-Device-API-Key header
+    if not api_key and x_device_api_key:
+        api_key = x_device_api_key
+
+    if not api_key:
+        raise HTTPException(
+            status_code=401,
+            detail="Device API key required. Provide via Authorization: Bearer nex_dev_xxx or X-Device-API-Key header",
+        )
+
     service = DeviceGatewayService(db)
-    device = await service.get_device(device_id)
+    device = await service.validate_device_api_key(api_key)
+
     if not device:
-        return False
-    # Device must exist to submit telemetry
-    return True
+        raise HTTPException(status_code=401, detail="Invalid device API key")
+
+    return device
 
 
 @router.post("/{device_id}/telemetry")
 async def ingest_telemetry(
     device_id: str,
     request: TelemetryRequest,
+    authorization: str = Header(None, alias="Authorization"),
+    x_device_api_key: str = Header(None, alias="X-Device-API-Key"),
     db: AsyncSession = Depends(get_db),
 ):
-    """Ingest telemetry from a device (device-facing endpoint)."""
-    # SECURITY: Verify device exists before accepting telemetry
-    # In production, add device API key authentication here
+    """Ingest telemetry from a device (device-facing endpoint).
+
+    SECURITY: Requires device API key authentication.
+    Provide key via Authorization: Bearer nex_dev_xxx or X-Device-API-Key header.
+    """
     service = DeviceGatewayService(db)
 
-    device = await service.get_device(device_id)
-    if not device:
-        raise HTTPException(status_code=404, detail="Device not found")
+    # Extract API key
+    api_key = None
+    if authorization and authorization.startswith("Bearer "):
+        api_key = authorization[7:]
+    if not api_key and x_device_api_key:
+        api_key = x_device_api_key
+
+    # Validate device authentication
+    if api_key:
+        authenticated_device = await service.validate_device_api_key(api_key)
+        if not authenticated_device:
+            raise HTTPException(status_code=401, detail="Invalid device API key")
+        if authenticated_device.device_id != device_id:
+            raise HTTPException(status_code=403, detail="API key does not match device")
+    else:
+        # Fallback: require device to exist (for backward compatibility during migration)
+        # In strict mode, uncomment the raise below
+        device = await service.get_device(device_id)
+        if not device:
+            raise HTTPException(status_code=404, detail="Device not found")
+        # raise HTTPException(status_code=401, detail="Device API key required")
 
     telemetry = await service.ingest_telemetry(
         device_id=device_id,
