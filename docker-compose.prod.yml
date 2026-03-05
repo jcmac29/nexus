@@ -57,6 +57,24 @@ services:
       timeout: 5s
       retries: 3
 
+  playground:
+    build: ./playground
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  user-dashboard:
+    build: ./user-dashboard
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
   # ==========================================================================
   # Reverse Proxy
   # ==========================================================================
@@ -74,6 +92,8 @@ services:
       - api
       - admin-dashboard
       - landing
+      - playground
+      - user-dashboard
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
       interval: 30s

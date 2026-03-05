@@ -93,6 +93,15 @@ class Settings(BaseSettings):
     # Frontend URLs (for CORS)
     admin_dashboard_url: str = "http://localhost:3001"
     landing_url: str = "http://localhost:3000"
+    frontend_url: str = "http://localhost"  # Base URL for password reset links
+
+    # SMTP Email (optional - password reset disabled if not set)
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_tls: bool = True
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str = "noreply@nexus.ai"
 
 
 def _validate_production_secrets(settings: Settings) -> None:
