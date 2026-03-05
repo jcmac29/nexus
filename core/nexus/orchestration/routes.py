@@ -252,6 +252,10 @@ async def get_execution(
     if not execution:
         raise HTTPException(status_code=404, detail="Execution not found")
 
+    # SECURITY: Verify ownership before returning execution details
+    if execution.triggered_by != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this execution")
+
     return {
         "id": str(execution.id),
         "workflow_id": str(execution.workflow_id),
@@ -278,6 +282,13 @@ async def provide_input(
 ):
     """Provide human input to a waiting execution."""
     service = OrchestrationService(db)
+
+    # SECURITY: Verify ownership before providing input
+    execution = await service.get_execution(UUID(execution_id))
+    if not execution:
+        raise HTTPException(status_code=404, detail="Execution not found")
+    if execution.triggered_by != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to provide input to this execution")
 
     try:
         execution = await service.provide_human_input(

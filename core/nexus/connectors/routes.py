@@ -147,6 +147,13 @@ async def execute(
     """Execute an operation on a connector."""
     service = ConnectorService(db)
 
+    # SECURITY: Verify ownership before execution
+    connector = await service.get_connector(UUID(connector_id))
+    if not connector:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    if connector.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to use this connector")
+
     try:
         execution = await service.execute(
             connector_id=UUID(connector_id),
@@ -184,6 +191,10 @@ async def execute_by_slug(
 
     if not connector:
         raise HTTPException(status_code=404, detail="Connector not found")
+
+    # SECURITY: Verify ownership before execution
+    if connector.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to use this connector")
 
     try:
         execution = await service.execute(
@@ -268,6 +279,14 @@ async def health_check(
 ):
     """Perform health check on a connector."""
     service = ConnectorService(db)
+
+    # SECURITY: Verify ownership before health check
+    connector = await service.get_connector(UUID(connector_id))
+    if not connector:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    if connector.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to check this connector")
+
     result = await service.health_check(UUID(connector_id))
     return result
 
@@ -280,6 +299,14 @@ async def discover_schema(
 ):
     """Discover schema/structure of the connected system."""
     service = ConnectorService(db)
+
+    # SECURITY: Verify ownership before schema discovery
+    connector = await service.get_connector(UUID(connector_id))
+    if not connector:
+        raise HTTPException(status_code=404, detail="Connector not found")
+    if connector.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this connector")
+
     schema = await service.discover_schema(UUID(connector_id))
     return {"schema": schema}
 
