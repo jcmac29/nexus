@@ -4,15 +4,72 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import ipaddress
+import logging
 import httpx
 from datetime import datetime, timedelta
 from typing import Any, Callable
+from urllib.parse import urlparse
 from uuid import UUID
 
 from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.events.models import Event, EventSubscription, EventDelivery
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_webhook_url(url: str | None) -> bool:
+    """
+    Validate webhook URL to prevent SSRF attacks.
+
+    Returns True if URL is safe, False otherwise.
+    """
+    if not url:
+        return True  # None is valid (no webhook)
+
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return False
+
+    # Must be http or https
+    if parsed.scheme not in ("http", "https"):
+        return False
+
+    # Must have a hostname
+    if not parsed.hostname:
+        return False
+
+    hostname = parsed.hostname.lower()
+
+    # Block localhost and common local hostnames
+    blocked_hosts = {
+        "localhost", "127.0.0.1", "::1", "0.0.0.0",
+        "metadata.google.internal", "169.254.169.254",
+        "metadata.internal", "kubernetes.default",
+    }
+    if hostname in blocked_hosts:
+        logger.warning(f"Blocked event webhook to: {hostname}")
+        return False
+
+    # Block private IP ranges
+    try:
+        ip = ipaddress.ip_address(hostname)
+        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+            logger.warning(f"Blocked event webhook to private IP: {hostname}")
+            return False
+    except ValueError:
+        # Not an IP address, it's a hostname
+        pass
+
+    # Block internal-looking hostnames
+    if any(internal in hostname for internal in [".internal", ".local", ".localhost", ".svc.cluster"]):
+        logger.warning(f"Blocked event webhook to internal host: {hostname}")
+        return False
+
+    return True
 
 
 class EventBus:
@@ -76,6 +133,11 @@ class EventBus:
         filters: dict | None = None,
     ) -> EventSubscription:
         """Create a subscription to events."""
+        # SECURITY: Validate webhook URL to prevent SSRF
+        if delivery_method == "webhook" and webhook_url:
+            if not _validate_webhook_url(webhook_url):
+                raise ValueError("Invalid webhook URL: must be a public HTTP/HTTPS endpoint")
+
         subscription = EventSubscription(
             subscriber_id=subscriber_id,
             subscriber_type=subscriber_type,
@@ -260,6 +322,11 @@ class EventBus:
     async def _deliver_via_webhook(self, event: Event, subscription: EventSubscription):
         """Deliver event via webhook."""
         if not subscription.webhook_url:
+            return
+
+        # SECURITY: Validate URL to prevent SSRF (defense in depth)
+        if not _validate_webhook_url(subscription.webhook_url):
+            logger.warning(f"Blocked delivery to invalid webhook URL for subscription {subscription.id}")
             return
 
         headers = {"Content-Type": "application/json"}
