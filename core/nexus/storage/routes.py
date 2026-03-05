@@ -69,6 +69,13 @@ class CopyFileRequest(BaseModel):
     new_bucket: str | None = None
 
 
+# SECURITY: Whitelist of allowed entity types for file associations
+ALLOWED_ENTITY_TYPES = {
+    "agent", "team", "conversation", "message", "memory", "workflow",
+    "document", "project", "task", "gig", "device", "mission", None
+}
+
+
 @router.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
@@ -80,6 +87,13 @@ async def upload_file(
     db: AsyncSession = Depends(get_db),
 ):
     """Upload a file directly."""
+    # SECURITY: Validate entity_type against whitelist
+    if entity_type and entity_type not in ALLOWED_ENTITY_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid entity_type. Allowed values: {', '.join(t for t in ALLOWED_ENTITY_TYPES if t)}"
+        )
+
     service = StorageService(db)
 
     # SECURITY: Enforce file size limit to prevent DoS attacks

@@ -394,7 +394,8 @@ def cached(
             key_parts = [key_prefix or func.__name__]
             key_parts.extend(str(arg) for arg in args)
             key_parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
-            key = hashlib.md5(":".join(key_parts).encode()).hexdigest()
+            # SECURITY: Use SHA-256 instead of MD5 for cache key generation
+            key = hashlib.sha256(":".join(key_parts).encode()).hexdigest()
             full_key = f"cache:{func.__name__}:{key}"
 
             # This requires cache service to be injected or globally available

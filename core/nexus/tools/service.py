@@ -392,7 +392,8 @@ class ToolService:
     def _get_cache_key(self, tool_id: UUID, input_data: dict) -> str:
         """Generate cache key for tool execution."""
         data_str = json.dumps(input_data, sort_keys=True)
-        return f"{tool_id}:{hashlib.md5(data_str.encode()).hexdigest()}"
+        # SECURITY: Use SHA-256 instead of MD5 for cache key generation
+        return f"{tool_id}:{hashlib.sha256(data_str.encode()).hexdigest()}"
 
     def _get_from_cache(self, key: str, ttl: int) -> Any | None:
         """Get value from cache if not expired."""

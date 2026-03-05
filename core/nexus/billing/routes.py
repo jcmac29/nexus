@@ -94,9 +94,11 @@ def plan_to_response(plan_type: PlanType) -> PlanResponse:
 @router.post("/accounts", response_model=AccountResponse, status_code=status.HTTP_201_CREATED)
 async def create_account(
     data: AccountCreate,
+    agent: Agent = Depends(get_current_agent),  # SECURITY: Require authentication
     service: BillingService = Depends(get_billing_service),
 ):
-    """Create a new billing account."""
+    """Create a new billing account. Requires authentication."""
+    # SECURITY: Only authenticated agents can create billing accounts
     # Check if account already exists
     existing = await service.get_account_by_email(data.email)
     if existing:
@@ -108,6 +110,7 @@ async def create_account(
     account = await service.create_account(
         email=data.email,
         name=data.name,
+        owner_agent_id=agent.id,  # Associate with the creating agent
     )
 
     # Create Stripe customer if enabled
