@@ -86,6 +86,19 @@ async def get_messages(
     db: AsyncSession = Depends(get_db),
 ):
     """Get messages from a conversation."""
+    from sqlalchemy import select
+    from nexus.sms.models import SMSConversation
+
+    # SECURITY: Verify conversation ownership before returning messages
+    result = await db.execute(
+        select(SMSConversation).where(SMSConversation.id == UUID(conversation_id))
+    )
+    conversation = result.scalar_one_or_none()
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if conversation.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this conversation")
+
     service = SMSService(db)
     messages = await service.get_messages(UUID(conversation_id), limit)
 
@@ -122,6 +135,10 @@ async def configure_conversation(
 
     if not conversation:
         raise HTTPException(status_code=404, detail="Conversation not found")
+
+    # SECURITY: Verify ownership before configuring
+    if conversation.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to configure this conversation")
 
     conversation.auto_reply_enabled = request.auto_reply_enabled
     if request.ai_agent_id:

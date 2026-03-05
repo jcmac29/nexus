@@ -85,7 +85,9 @@ async def list_traces(
     """List traces."""
     service = TracingService(db)
 
+    # SECURITY: Only list traces started by this agent
     traces = await service.list_traces(
+        root_agent_id=agent.id,
         service_name=service_name,
         status=status,
         since=since,
@@ -118,6 +120,10 @@ async def get_trace(
 
     if not trace:
         raise HTTPException(status_code=404, detail="Trace not found")
+
+    # SECURITY: Verify ownership
+    if trace.root_agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this trace")
 
     return {
         "trace_id": trace.trace_id,
@@ -157,11 +163,15 @@ async def get_span_tree(
 ):
     """Get hierarchical span tree for a trace."""
     service = TracingService(db)
-    tree = await service.get_span_tree(trace_id)
 
-    if not tree:
+    # SECURITY: Verify ownership first
+    trace = await service.get_trace(trace_id)
+    if not trace:
         raise HTTPException(status_code=404, detail="Trace not found")
+    if trace.root_agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this trace")
 
+    tree = await service.get_span_tree(trace_id)
     return tree
 
 
@@ -175,11 +185,15 @@ async def end_trace(
 ):
     """End a trace."""
     service = TracingService(db)
-    trace = await service.end_trace(trace_id, status, error)
 
+    # SECURITY: Verify ownership before ending
+    trace = await service.get_trace(trace_id)
     if not trace:
         raise HTTPException(status_code=404, detail="Trace not found")
+    if trace.root_agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to end this trace")
 
+    trace = await service.end_trace(trace_id, status, error)
     return {"status": "ended", "duration_ms": trace.duration_ms}
 
 
@@ -224,6 +238,22 @@ async def end_span(
     db: AsyncSession = Depends(get_db),
 ):
     """End a span."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from nexus.tracing.models import Span
+
+    # SECURITY: Verify ownership via trace
+    result = await db.execute(
+        select(Span)
+        .options(selectinload(Span.trace))
+        .where(Span.span_id == span_id)
+    )
+    span_record = result.scalar_one_or_none()
+    if not span_record:
+        raise HTTPException(status_code=404, detail="Span not found")
+    if span_record.trace and span_record.trace.root_agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this span")
+
     service = TracingService(db)
     span = await service.end_span(
         span_id,
@@ -232,9 +262,6 @@ async def end_span(
         request.error_type,
         request.attributes,
     )
-
-    if not span:
-        raise HTTPException(status_code=404, detail="Span not found")
 
     return {"status": "ended", "duration_ms": span.duration_ms}
 
@@ -247,6 +274,22 @@ async def add_event(
     db: AsyncSession = Depends(get_db),
 ):
     """Add an event to a span."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from nexus.tracing.models import Span
+
+    # SECURITY: Verify ownership via trace
+    result = await db.execute(
+        select(Span)
+        .options(selectinload(Span.trace))
+        .where(Span.span_id == span_id)
+    )
+    span_record = result.scalar_one_or_none()
+    if not span_record:
+        raise HTTPException(status_code=404, detail="Span not found")
+    if span_record.trace and span_record.trace.root_agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this span")
+
     service = TracingService(db)
     await service.add_span_event(span_id, request.name, request.attributes)
     return {"status": "added"}

@@ -101,6 +101,19 @@ async def unsubscribe(
     db: AsyncSession = Depends(get_db),
 ):
     """Unsubscribe from events."""
+    from sqlalchemy import select
+    from nexus.events.models import EventSubscription
+
+    # SECURITY: Verify subscription ownership before unsubscribing
+    result = await db.execute(
+        select(EventSubscription).where(EventSubscription.id == UUID(subscription_id))
+    )
+    subscription = result.scalar_one_or_none()
+    if not subscription:
+        raise HTTPException(status_code=404, detail="Subscription not found")
+    if subscription.subscriber_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this subscription")
+
     bus = EventBus(db)
     await bus.unsubscribe(UUID(subscription_id))
     return {"status": "unsubscribed"}

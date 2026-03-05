@@ -168,6 +168,19 @@ async def make_call(
     db: AsyncSession = Depends(get_db),
 ):
     """Make an outbound call."""
+    from sqlalchemy import select
+    from nexus.phone.models import PhoneNumber
+
+    # SECURITY: Verify ownership of the from number
+    result = await db.execute(
+        select(PhoneNumber).where(PhoneNumber.id == UUID(request.from_number_id))
+    )
+    phone_number = result.scalar_one_or_none()
+    if not phone_number:
+        raise HTTPException(status_code=404, detail="Phone number not found")
+    if phone_number.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to use this phone number")
+
     service = PhoneService(db)
 
     try:
@@ -201,7 +214,9 @@ async def list_calls(
     """List calls."""
     service = PhoneService(db)
 
+    # SECURITY: Pass owner_id to filter calls by agent's phone numbers
     calls = await service.list_calls(
+        owner_id=agent.id,
         status=CallStatus(status) if status else None,
         direction=CallDirection(direction) if direction else None,
         limit=limit,
@@ -229,11 +244,22 @@ async def get_call(
     db: AsyncSession = Depends(get_db),
 ):
     """Get a call by ID."""
-    service = PhoneService(db)
-    call = await service.get_call(UUID(call_id))
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from nexus.phone.models import PhoneCall
+
+    # SECURITY: Verify ownership via phone number
+    result = await db.execute(
+        select(PhoneCall)
+        .options(selectinload(PhoneCall.phone_number))
+        .where(PhoneCall.id == UUID(call_id))
+    )
+    call = result.scalar_one_or_none()
 
     if not call:
         raise HTTPException(status_code=404, detail="Call not found")
+    if call.phone_number and call.phone_number.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this call")
 
     return {
         "id": str(call.id),
@@ -260,6 +286,22 @@ async def end_call(
     db: AsyncSession = Depends(get_db),
 ):
     """End a call."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from nexus.phone.models import PhoneCall
+
+    # SECURITY: Verify ownership via phone number before ending call
+    result = await db.execute(
+        select(PhoneCall)
+        .options(selectinload(PhoneCall.phone_number))
+        .where(PhoneCall.id == UUID(call_id))
+    )
+    call_record = result.scalar_one_or_none()
+    if not call_record:
+        raise HTTPException(status_code=404, detail="Call not found")
+    if call_record.phone_number and call_record.phone_number.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to end this call")
+
     service = PhoneService(db)
 
     try:
@@ -282,6 +324,22 @@ async def transfer_call(
     db: AsyncSession = Depends(get_db),
 ):
     """Transfer a call."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from nexus.phone.models import PhoneCall
+
+    # SECURITY: Verify ownership via phone number before transferring
+    result = await db.execute(
+        select(PhoneCall)
+        .options(selectinload(PhoneCall.phone_number))
+        .where(PhoneCall.id == UUID(call_id))
+    )
+    call_record = result.scalar_one_or_none()
+    if not call_record:
+        raise HTTPException(status_code=404, detail="Call not found")
+    if call_record.phone_number and call_record.phone_number.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to transfer this call")
+
     service = PhoneService(db)
 
     try:

@@ -228,6 +228,18 @@ async def get_event(
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
+    # SECURITY: Check if agent is organizer or attendee
+    attendee_result = await db.execute(
+        select(EventAttendee).where(
+            EventAttendee.event_id == UUID(event_id),
+            EventAttendee.agent_id == agent.id,
+        )
+    )
+    is_attendee = attendee_result.scalar_one_or_none() is not None
+
+    if event.organizer_id != agent.id and not is_attendee:
+        raise HTTPException(status_code=403, detail="Not authorized to view this event")
+
     result = await db.execute(
         select(EventAttendee).where(EventAttendee.event_id == UUID(event_id))
     )

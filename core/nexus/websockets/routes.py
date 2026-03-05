@@ -162,12 +162,31 @@ async def handle_message(
 
 
 @router.get("/online")
-async def get_online_agents():
+async def get_online_agents(
+    token: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
     """Get list of currently online agents."""
+    # SECURITY: Require authentication
+    agent = await get_agent_from_token(token, db)
+    if not agent:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     return {"online": manager.get_online_agents()}
 
 
 @router.get("/channels/{channel}/members")
-async def get_channel_members(channel: str):
+async def get_channel_members(
+    channel: str,
+    token: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+):
     """Get members of a channel."""
+    # SECURITY: Require authentication
+    agent = await get_agent_from_token(token, db)
+    if not agent:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Invalid token")
+
     return {"channel": channel, "members": list(manager.get_channel_members(channel))}

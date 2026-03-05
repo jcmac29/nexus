@@ -182,6 +182,10 @@ async def get_device(
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
 
+    # SECURITY: Verify ownership before returning device details
+    if device.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this device")
+
     return {
         "id": str(device.id),
         "device_id": device.device_id,
@@ -218,6 +222,13 @@ async def send_command(
     """Send a command to a device."""
     service = DeviceGatewayService(db)
 
+    # SECURITY: Verify ownership before sending commands
+    device = await service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to send commands to this device")
+
     priority_map = {
         "emergency": CommandPriority.EMERGENCY,
         "critical": CommandPriority.CRITICAL,
@@ -251,6 +262,14 @@ async def emergency_stop(
 ):
     """Emergency stop a device."""
     service = DeviceGatewayService(db)
+
+    # SECURITY: Verify ownership before emergency stop
+    device = await service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to control this device")
+
     command = await service.emergency_stop(device_id, agent.id)
     return {"command_id": command.command_id, "status": command.status.value}
 
@@ -263,6 +282,14 @@ async def return_to_base(
 ):
     """Return device to base/home."""
     service = DeviceGatewayService(db)
+
+    # SECURITY: Verify ownership before sending return command
+    device = await service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to control this device")
+
     command = await service.return_to_base(device_id, agent.id)
     return {"command_id": command.command_id, "status": command.status.value}
 
@@ -307,6 +334,13 @@ async def get_telemetry_history(
     """Get telemetry history for a device."""
     service = DeviceGatewayService(db)
 
+    # SECURITY: Verify ownership before returning telemetry data
+    device = await service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this device's telemetry")
+
     telemetry = await service.get_telemetry_history(
         device_id=device_id,
         start_time=datetime.fromisoformat(start_time),
@@ -342,6 +376,14 @@ async def get_device_events(
 ):
     """Get events for a device."""
     service = DeviceGatewayService(db)
+
+    # SECURITY: Verify ownership before returning device events
+    device = await service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this device's events")
+
     events = await service.get_device_events(
         device_id=device_id,
         severity=severity,
@@ -398,6 +440,19 @@ async def fleet_emergency_stop(
     db: AsyncSession = Depends(get_db),
 ):
     """Emergency stop all devices in a fleet."""
+    from sqlalchemy import select
+    from nexus.devices.models import DeviceFleet
+
+    # SECURITY: Verify fleet ownership before emergency stop
+    result = await db.execute(
+        select(DeviceFleet).where(DeviceFleet.id == UUID(fleet_id))
+    )
+    fleet = result.scalar_one_or_none()
+    if not fleet:
+        raise HTTPException(status_code=404, detail="Fleet not found")
+    if fleet.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to control this fleet")
+
     service = DeviceGatewayService(db)
     commands = await service.fleet_emergency_stop(UUID(fleet_id), agent.id)
     return {"commands_sent": len(commands)}
@@ -411,7 +466,28 @@ async def assign_to_fleet(
     db: AsyncSession = Depends(get_db),
 ):
     """Assign a device to a fleet."""
+    from sqlalchemy import select
+    from nexus.devices.models import DeviceFleet
+
     service = DeviceGatewayService(db)
+
+    # SECURITY: Verify device ownership
+    device = await service.get_device(device_id)
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this device")
+
+    # SECURITY: Verify fleet ownership
+    result = await db.execute(
+        select(DeviceFleet).where(DeviceFleet.id == UUID(fleet_id))
+    )
+    fleet = result.scalar_one_or_none()
+    if not fleet:
+        raise HTTPException(status_code=404, detail="Fleet not found")
+    if fleet.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to add devices to this fleet")
+
     await service.assign_to_fleet(device_id, UUID(fleet_id))
     return {"status": "assigned"}
 
@@ -451,6 +527,19 @@ async def start_mission(
     db: AsyncSession = Depends(get_db),
 ):
     """Start a mission."""
+    from sqlalchemy import select
+    from nexus.devices.models import DeviceMission
+
+    # SECURITY: Verify mission ownership before starting
+    result = await db.execute(
+        select(DeviceMission).where(DeviceMission.id == UUID(mission_id))
+    )
+    mission_record = result.scalar_one_or_none()
+    if not mission_record:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    if mission_record.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to start this mission")
+
     service = DeviceGatewayService(db)
     mission = await service.start_mission(UUID(mission_id))
     return {"id": str(mission.id), "status": mission.status}
@@ -463,6 +552,19 @@ async def abort_mission(
     db: AsyncSession = Depends(get_db),
 ):
     """Abort a mission."""
+    from sqlalchemy import select
+    from nexus.devices.models import DeviceMission
+
+    # SECURITY: Verify mission ownership before aborting
+    result = await db.execute(
+        select(DeviceMission).where(DeviceMission.id == UUID(mission_id))
+    )
+    mission_record = result.scalar_one_or_none()
+    if not mission_record:
+        raise HTTPException(status_code=404, detail="Mission not found")
+    if mission_record.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to abort this mission")
+
     service = DeviceGatewayService(db)
     mission = await service.abort_mission(UUID(mission_id), agent.id)
     return {"id": str(mission.id), "status": mission.status}

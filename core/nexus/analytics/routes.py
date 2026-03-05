@@ -32,9 +32,18 @@ async def get_my_stats(
 @router.get("/agents/{agent_id}")
 async def get_agent_stats(
     agent_id: UUID,
+    agent: Agent = Depends(get_current_agent),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     """Get statistics for a specific agent."""
+    # SECURITY: Only allow viewing own stats or public stats
+    # For now, require the requesting agent to be the same agent
+    if agent_id != agent.id:
+        from fastapi import HTTPException, status
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view this agent's statistics",
+        )
     return await service.get_agent_stats(agent_id)
 
 

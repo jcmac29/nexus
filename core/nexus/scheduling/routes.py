@@ -119,6 +119,10 @@ async def get_job(
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 
+    # SECURITY: Verify ownership before returning job details
+    if job.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this job")
+
     return {
         "id": str(job.id),
         "name": job.name,
@@ -242,7 +246,17 @@ async def list_executions(
 ):
     """List executions for a job."""
     from sqlalchemy import select
-    from nexus.scheduling.models import JobExecution
+    from nexus.scheduling.models import ScheduledJob, JobExecution
+
+    # SECURITY: Verify job ownership before listing executions
+    job_result = await db.execute(
+        select(ScheduledJob).where(ScheduledJob.id == UUID(job_id))
+    )
+    job = job_result.scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    if job.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this job's executions")
 
     result = await db.execute(
         select(JobExecution)

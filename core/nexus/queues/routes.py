@@ -81,7 +81,10 @@ async def list_queues(
     from sqlalchemy import select
     from nexus.queues.models import Queue
 
-    result = await db.execute(select(Queue))
+    # SECURITY: Only list queues owned by the agent
+    result = await db.execute(
+        select(Queue).where(Queue.owner_id == agent.id)
+    )
     queues = result.scalars().all()
 
     return [
@@ -103,11 +106,21 @@ async def get_queue_stats(
     db: AsyncSession = Depends(get_db),
 ):
     """Get queue statistics."""
+    from sqlalchemy import select
+    from nexus.queues.models import Queue
+
+    # SECURITY: Verify queue ownership
+    result = await db.execute(
+        select(Queue).where(Queue.id == UUID(queue_id))
+    )
+    queue = result.scalar_one_or_none()
+    if not queue:
+        raise HTTPException(status_code=404, detail="Queue not found")
+    if queue.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this queue")
+
     service = QueueService(db)
     stats = await service.get_queue_stats(UUID(queue_id))
-
-    if not stats:
-        raise HTTPException(status_code=404, detail="Queue not found")
 
     return stats
 
@@ -120,6 +133,19 @@ async def enqueue(
     db: AsyncSession = Depends(get_db),
 ):
     """Add an item to a queue."""
+    from sqlalchemy import select
+    from nexus.queues.models import Queue
+
+    # SECURITY: Verify queue ownership before enqueuing
+    result = await db.execute(
+        select(Queue).where(Queue.id == UUID(queue_id))
+    )
+    queue = result.scalar_one_or_none()
+    if not queue:
+        raise HTTPException(status_code=404, detail="Queue not found")
+    if queue.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to add items to this queue")
+
     service = QueueService(db)
 
     try:
@@ -154,6 +180,19 @@ async def dequeue(
     db: AsyncSession = Depends(get_db),
 ):
     """Get items from a queue for processing."""
+    from sqlalchemy import select
+    from nexus.queues.models import Queue
+
+    # SECURITY: Verify queue ownership before dequeuing
+    result = await db.execute(
+        select(Queue).where(Queue.id == UUID(queue_id))
+    )
+    queue = result.scalar_one_or_none()
+    if not queue:
+        raise HTTPException(status_code=404, detail="Queue not found")
+    if queue.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to dequeue from this queue")
+
     service = QueueService(db)
 
     items = await service.dequeue(
@@ -274,6 +313,19 @@ async def requeue_dead_letters(
     db: AsyncSession = Depends(get_db),
 ):
     """Requeue items from the dead letter queue."""
+    from sqlalchemy import select
+    from nexus.queues.models import Queue
+
+    # SECURITY: Verify queue ownership before requeuing dead letters
+    result = await db.execute(
+        select(Queue).where(Queue.id == UUID(queue_id))
+    )
+    queue = result.scalar_one_or_none()
+    if not queue:
+        raise HTTPException(status_code=404, detail="Queue not found")
+    if queue.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to manage this queue")
+
     service = QueueService(db)
     count = await service.requeue_dead_letters(UUID(queue_id), limit)
     return {"requeued": count}
@@ -286,6 +338,19 @@ async def cleanup_queue(
     db: AsyncSession = Depends(get_db),
 ):
     """Clean up expired items and recover stale locks."""
+    from sqlalchemy import select
+    from nexus.queues.models import Queue
+
+    # SECURITY: Verify queue ownership before cleanup
+    result = await db.execute(
+        select(Queue).where(Queue.id == UUID(queue_id))
+    )
+    queue = result.scalar_one_or_none()
+    if not queue:
+        raise HTTPException(status_code=404, detail="Queue not found")
+    if queue.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to manage this queue")
+
     service = QueueService(db)
 
     expired = await service.cleanup_expired(UUID(queue_id))

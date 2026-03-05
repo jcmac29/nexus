@@ -133,6 +133,19 @@ async def get_thread_emails(
     db: AsyncSession = Depends(get_db),
 ):
     """Get emails from a thread."""
+    from sqlalchemy import select
+    from nexus.email.models import EmailThread
+
+    # SECURITY: Verify thread ownership before returning emails
+    result = await db.execute(
+        select(EmailThread).where(EmailThread.id == UUID(thread_id))
+    )
+    thread = result.scalar_one_or_none()
+    if not thread:
+        raise HTTPException(status_code=404, detail="Thread not found")
+    if thread.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this thread")
+
     service = EmailService(db)
     emails = await service.get_thread_emails(UUID(thread_id), limit)
 
@@ -163,6 +176,22 @@ async def mark_email_read(
     db: AsyncSession = Depends(get_db),
 ):
     """Mark an email as read."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from nexus.email.models import Email
+
+    # SECURITY: Verify email ownership via thread before marking read
+    result = await db.execute(
+        select(Email)
+        .options(selectinload(Email.thread))
+        .where(Email.id == UUID(email_id))
+    )
+    email = result.scalar_one_or_none()
+    if not email:
+        raise HTTPException(status_code=404, detail="Email not found")
+    if email.thread and email.thread.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to modify this email")
+
     service = EmailService(db)
     await service.mark_as_read(UUID(email_id))
     return {"status": "read"}
@@ -243,6 +272,19 @@ async def render_template(
     db: AsyncSession = Depends(get_db),
 ):
     """Render an email template."""
+    from sqlalchemy import select
+    from nexus.email.models import EmailTemplate
+
+    # SECURITY: Verify template ownership before rendering
+    result = await db.execute(
+        select(EmailTemplate).where(EmailTemplate.id == UUID(template_id))
+    )
+    template = result.scalar_one_or_none()
+    if not template:
+        raise HTTPException(status_code=404, detail="Template not found")
+    if template.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to use this template")
+
     service = EmailService(db)
     rendered = await service.render_template(UUID(template_id), variables)
     return rendered

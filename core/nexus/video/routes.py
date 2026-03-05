@@ -150,6 +150,11 @@ async def get_room(
     if not room:
         raise HTTPException(status_code=404, detail="Room not found")
 
+    # SECURITY: Only owner or participants can view room details
+    # For now, require ownership for private rooms
+    if room.is_private and room.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to view this room")
+
     return {
         "id": str(room.id),
         "room_id": room.room_id,
@@ -221,6 +226,14 @@ async def end_room(
 ):
     """End a video room."""
     service = VideoService(db)
+
+    # SECURITY: Verify ownership before ending room
+    room = await service.get_room(UUID(room_id))
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    if room.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to end this room")
+
     await service.end_room(UUID(room_id))
     return {"status": "ended"}
 
@@ -233,7 +246,17 @@ async def get_participants(
 ):
     """Get participants in a room."""
     service = VideoService(db)
+
+    # SECURITY: Verify agent is owner or participant before listing participants
+    room = await service.get_room(UUID(room_id))
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+
     participants = await service.get_room_participants(UUID(room_id))
+    is_participant = any(p.agent_id == agent.id for p in participants)
+
+    if room.owner_id != agent.id and not is_participant:
+        raise HTTPException(status_code=403, detail="Not authorized to view participants")
 
     return [
         {
@@ -260,6 +283,19 @@ async def update_media(
     db: AsyncSession = Depends(get_db),
 ):
     """Update participant media state."""
+    from sqlalchemy import select
+    from nexus.video.models import VideoParticipant
+
+    # SECURITY: Verify the participant belongs to the agent
+    result = await db.execute(
+        select(VideoParticipant).where(VideoParticipant.id == UUID(participant_id))
+    )
+    participant = result.scalar_one_or_none()
+    if not participant:
+        raise HTTPException(status_code=404, detail="Participant not found")
+    if participant.agent_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to update this participant's media")
+
     service = VideoService(db)
     await service.update_participant_media(
         participant_id=UUID(participant_id),
@@ -279,6 +315,14 @@ async def start_recording(
 ):
     """Start recording a room."""
     service = VideoService(db)
+
+    # SECURITY: Verify ownership before starting recording
+    room = await service.get_room(UUID(room_id))
+    if not room:
+        raise HTTPException(status_code=404, detail="Room not found")
+    if room.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to record this room")
+
     recording = await service.start_recording(UUID(room_id))
     return {
         "id": str(recording.id),
@@ -294,6 +338,22 @@ async def stop_recording(
     db: AsyncSession = Depends(get_db),
 ):
     """Stop a recording."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from nexus.video.models import VideoRecording
+
+    # SECURITY: Verify ownership via room before stopping recording
+    result = await db.execute(
+        select(VideoRecording)
+        .options(selectinload(VideoRecording.room))
+        .where(VideoRecording.id == UUID(recording_id))
+    )
+    recording_record = result.scalar_one_or_none()
+    if not recording_record:
+        raise HTTPException(status_code=404, detail="Recording not found")
+    if recording_record.room and recording_record.room.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to stop this recording")
+
     service = VideoService(db)
     recording = await service.stop_recording(UUID(recording_id))
     return {

@@ -129,6 +129,19 @@ async def sync_channels(
     db: AsyncSession = Depends(get_db),
 ):
     """Sync channels from a platform."""
+    from sqlalchemy import select
+    from nexus.chat.models import ChatConnection
+
+    # SECURITY: Verify ownership before syncing
+    result = await db.execute(
+        select(ChatConnection).where(ChatConnection.id == UUID(connection_id))
+    )
+    connection = result.scalar_one_or_none()
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    if connection.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to sync this connection")
+
     service = ChatService(db)
     channels = await service.sync_channels(UUID(connection_id))
 
@@ -153,6 +166,19 @@ async def list_channels(
     db: AsyncSession = Depends(get_db),
 ):
     """List channels for a connection."""
+    from sqlalchemy import select
+    from nexus.chat.models import ChatConnection
+
+    # SECURITY: Verify ownership before listing channels
+    result = await db.execute(
+        select(ChatConnection).where(ChatConnection.id == UUID(connection_id))
+    )
+    connection = result.scalar_one_or_none()
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    if connection.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to access this connection")
+
     service = ChatService(db)
     channels = await service.list_channels(UUID(connection_id), synced_only)
 
@@ -179,14 +205,21 @@ async def configure_channel(
 ):
     """Configure a channel."""
     from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
     from nexus.chat.models import ChatChannel
 
     result = await db.execute(
-        select(ChatChannel).where(ChatChannel.id == UUID(channel_id))
+        select(ChatChannel)
+        .options(selectinload(ChatChannel.connection))
+        .where(ChatChannel.id == UUID(channel_id))
     )
     channel = result.scalar_one_or_none()
     if not channel:
         raise HTTPException(status_code=404, detail="Channel not found")
+
+    # SECURITY: Verify ownership via connection
+    if channel.connection.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to configure this channel")
 
     if request.ai_agent_id:
         channel.ai_agent_id = UUID(request.ai_agent_id)
@@ -206,6 +239,22 @@ async def send_message(
     db: AsyncSession = Depends(get_db),
 ):
     """Send a message to a channel."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from nexus.chat.models import ChatChannel
+
+    # SECURITY: Verify ownership via connection before sending
+    result = await db.execute(
+        select(ChatChannel)
+        .options(selectinload(ChatChannel.connection))
+        .where(ChatChannel.id == UUID(channel_id))
+    )
+    channel = result.scalar_one_or_none()
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    if channel.connection.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to send messages to this channel")
+
     service = ChatService(db)
     response = await service.send_message(
         channel_id=UUID(channel_id),
@@ -224,6 +273,22 @@ async def get_messages(
     db: AsyncSession = Depends(get_db),
 ):
     """Get messages from a channel."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from nexus.chat.models import ChatChannel
+
+    # SECURITY: Verify ownership via connection before reading messages
+    result = await db.execute(
+        select(ChatChannel)
+        .options(selectinload(ChatChannel.connection))
+        .where(ChatChannel.id == UUID(channel_id))
+    )
+    channel = result.scalar_one_or_none()
+    if not channel:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    if channel.connection.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to read messages from this channel")
+
     service = ChatService(db)
     messages = await service.get_messages(UUID(channel_id), limit)
 
@@ -251,6 +316,19 @@ async def create_command(
     db: AsyncSession = Depends(get_db),
 ):
     """Create a slash command."""
+    from sqlalchemy import select
+    from nexus.chat.models import ChatConnection
+
+    # SECURITY: Verify ownership before creating command
+    result = await db.execute(
+        select(ChatConnection).where(ChatConnection.id == UUID(connection_id))
+    )
+    connection = result.scalar_one_or_none()
+    if not connection:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    if connection.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to create commands for this connection")
+
     service = ChatService(db)
     command = await service.create_command(
         connection_id=UUID(connection_id),
@@ -285,7 +363,7 @@ async def slack_webhook(
         service = ChatService(db)
 
         # Find connection by workspace
-        from sqlalchemy import select
+        from sqlalchemy import select, and_
         from nexus.chat.models import ChatConnection, ChatPlatform
 
         result = await db.execute(
