@@ -140,13 +140,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Shutdown (if needed)
 
 
+# SECURITY: Disable API docs in production to prevent information disclosure
+docs_url = "/docs" if settings.debug else None
+redoc_url = "/redoc" if settings.debug else None
+
 app = FastAPI(
     title=settings.app_name,
     description="The connective layer for AI agents - Identity, Memory, Discovery",
     version=__version__,
     lifespan=lifespan,
-    docs_url="/docs",
-    redoc_url="/redoc",
+    docs_url=docs_url,
+    redoc_url=redoc_url,
+    openapi_url="/openapi.json" if settings.debug else None,
 )
 
 # CORS middleware - configure allowed origins based on environment

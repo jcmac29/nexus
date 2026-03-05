@@ -247,16 +247,28 @@ class ProfileService:
     async def render_prompt(
         self,
         prompt_id: UUID,
+        agent_id: UUID,
         variables: dict[str, str],
     ) -> str | None:
-        """Render a prompt with variable substitution."""
+        """Render a prompt with variable substitution.
+
+        SECURITY: Verifies ownership before allowing access.
+        """
         prompt = await self.get_prompt(prompt_id)
         if not prompt:
             return None
 
+        # SECURITY: Verify ownership - agents can only render their own prompts
+        if prompt.agent_id != agent_id:
+            return None
+
         content = prompt.content
+
+        # SECURITY: Only substitute whitelisted variable names
+        allowed_vars = set(prompt.variables or [])
         for var_name, var_value in variables.items():
-            content = content.replace(f"{{{{{var_name}}}}}", var_value)
+            if var_name in allowed_vars:
+                content = content.replace(f"{{{{{var_name}}}}}", str(var_value))
 
         # Update use count
         prompt.use_count += 1

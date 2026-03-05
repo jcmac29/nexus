@@ -11,8 +11,15 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from jinja2 import Template
+from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import select, and_
+
+# SECURITY: Use sandboxed Jinja2 environment to prevent SSTI attacks
+_jinja_env = SandboxedEnvironment(
+    autoescape=True,
+    # Disable dangerous features
+    extensions=[],
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.tools.models import Tool, ToolExecution, ToolCategory, AuthType
@@ -196,12 +203,18 @@ class ToolService:
 
         # Build request body
         if tool.request_template:
-            template = Template(tool.request_template)
-            body = template.render(**input_data)
+            # SECURITY: Use sandboxed template to prevent SSTI attacks
             try:
-                body = json.loads(body)
-            except json.JSONDecodeError:
-                pass  # Keep as string
+                template = _jinja_env.from_string(tool.request_template)
+                body = template.render(**input_data)
+            except Exception:
+                # If template rendering fails, fall back to input data
+                body = input_data
+            else:
+                try:
+                    body = json.loads(body)
+                except json.JSONDecodeError:
+                    pass  # Keep as string
         else:
             body = input_data
 

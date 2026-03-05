@@ -268,7 +268,7 @@ class ConnectorService:
 
             try:
                 return response.json()
-            except:
+            except (json.JSONDecodeError, ValueError):
                 return {"text": response.text, "status_code": response.status_code}
 
     async def _execute_graphql(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import mimetypes
 import os
+import re
 from datetime import datetime, timedelta
 from uuid import UUID
 import uuid as uuid_module
@@ -14,6 +15,52 @@ from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.storage.models import StoredFile, StorageBucket, StorageProvider, FileStatus
+
+
+def _validate_bucket_name(bucket: str) -> str:
+    """
+    Validate and sanitize bucket name to prevent path traversal.
+
+    SECURITY: Only allow alphanumeric characters, hyphens, and underscores.
+    """
+    if not bucket:
+        raise ValueError("Bucket name cannot be empty")
+
+    # Remove any path traversal attempts
+    sanitized = re.sub(r'[^a-zA-Z0-9_-]', '', bucket)
+
+    if not sanitized:
+        raise ValueError("Invalid bucket name")
+
+    # Ensure it doesn't start with a dash
+    sanitized = sanitized.lstrip('-')
+
+    if len(sanitized) > 63:
+        sanitized = sanitized[:63]
+
+    return sanitized
+
+
+def _safe_path_join(base: Path, *parts: str) -> Path:
+    """
+    Safely join paths and verify result is within base directory.
+
+    SECURITY: Prevents path traversal attacks.
+    """
+    result = base
+    for part in parts:
+        # Sanitize each part
+        part = part.replace('..', '').replace('/', '').replace('\\', '')
+        result = result / part
+
+    # Resolve and verify path is within base
+    resolved = result.resolve()
+    base_resolved = base.resolve()
+
+    if not str(resolved).startswith(str(base_resolved)):
+        raise ValueError("Path traversal detected")
+
+    return resolved
 
 
 class StorageService:
@@ -62,7 +109,8 @@ class StorageService:
         entity_id: UUID | None = None,
     ) -> StoredFile:
         """Upload a file."""
-        bucket = bucket or self._default_bucket
+        # SECURITY: Validate and sanitize bucket name
+        bucket = _validate_bucket_name(bucket or self._default_bucket)
 
         # Generate unique key
         file_id = str(uuid_module.uuid4())
@@ -100,9 +148,10 @@ class StorageService:
             except Exception as e:
                 raise RuntimeError(f"Failed to upload to S3: {e}")
         else:
-            # Local storage
-            file_path = Path(self._local_path) / bucket / key
-            file_path.parent.mkdir(parents=True, exist_ok=True)
+            # Local storage - SECURITY: Use safe path join to prevent traversal
+            base_path = Path(self._local_path)
+            file_path = _safe_path_join(base_path, bucket, key)
+            file_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
             file_path.write_bytes(file_data)
             url = f"file://{file_path}"
 

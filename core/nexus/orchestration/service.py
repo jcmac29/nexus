@@ -413,7 +413,12 @@ class OrchestrationService:
                     result[output_key] = "".join(str(p) for p in parts if p)
                 elif transform_type == "template":
                     template = transform.get("template", "")
-                    result[output_key] = template.format(**state)
+                    # SECURITY: Use safe string substitution instead of .format()
+                    # Only substitute explicitly declared variables to prevent injection
+                    for var_name in transform.get("variables", []):
+                        if var_name in state:
+                            template = template.replace(f"{{{var_name}}}", str(state[var_name]))
+                    result[output_key] = template
 
         return result
 
