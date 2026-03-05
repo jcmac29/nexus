@@ -205,7 +205,9 @@ class StorageService:
             )
             data = response["Body"].read()
         else:
-            file_path = Path(self._local_path) / stored_file.bucket / stored_file.key
+            # SECURITY: Use safe path join to prevent path traversal attacks
+            base_path = Path(self._local_path)
+            file_path = _safe_path_join(base_path, stored_file.bucket, stored_file.key)
             data = file_path.read_bytes()
 
         return data, stored_file.original_filename or stored_file.key, stored_file.content_type

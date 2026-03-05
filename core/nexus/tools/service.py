@@ -326,10 +326,16 @@ class ToolService:
                         raise ValueError(f"Unsupported HTTP method: {tool.http_method}")
 
                 # Log request/response for debugging
+                # SECURITY: Filter out sensitive headers (case-insensitive)
+                sensitive_patterns = {"auth", "token", "key", "secret", "password", "credential", "bearer"}
+                def is_sensitive_header(header_name: str) -> bool:
+                    header_lower = header_name.lower()
+                    return any(pattern in header_lower for pattern in sensitive_patterns)
+
                 execution.request_log = {
                     "url": str(response.url),
                     "method": tool.http_method,
-                    "headers": {k: v for k, v in headers.items() if "auth" not in k.lower()},
+                    "headers": {k: "[REDACTED]" if is_sensitive_header(k) else v for k, v in headers.items()},
                 }
                 execution.response_log = {
                     "status_code": response.status_code,

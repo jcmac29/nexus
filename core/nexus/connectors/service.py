@@ -254,6 +254,21 @@ class ConnectorService:
         # This is a simplified implementation
         import asyncpg
 
+        # SECURITY: Validate query to prevent SQL injection
+        if not query:
+            raise ValueError("Query is required for SQL operations")
+
+        # Only allow queries from predefined templates (query must match a template)
+        # Raw SQL queries are rejected for security
+        allowed_queries = set(
+            tpl.get("query", "") for tpl in connector.query_templates.values()
+        )
+        if query not in allowed_queries:
+            raise ValueError(
+                "Only predefined query templates are allowed. "
+                "Raw SQL queries are rejected for security reasons."
+            )
+
         config = connector.connection_config
         conn = await asyncpg.connect(
             host=config.get("host", "localhost"),
@@ -264,14 +279,25 @@ class ConnectorService:
         )
 
         try:
+            # SECURITY: Use proper parameter binding with positional params
+            # Convert dict params to ordered list matching $1, $2, etc. in query
+            param_values = []
+            if params:
+                # Parameters must be passed as $1, $2, etc. in the query template
+                # Extract them in order
+                for i in range(1, len(params) + 1):
+                    key = f"p{i}"  # Expected keys: p1, p2, p3, ...
+                    if key in params:
+                        param_values.append(params[key])
+
             if operation == "read":
-                rows = await conn.fetch(query, *(params or {}).values())
+                rows = await conn.fetch(query, *param_values)
                 return {
                     "rows": [dict(row) for row in rows],
                     "count": len(rows),
                 }
             elif operation in ["write", "execute"]:
-                result = await conn.execute(query, *(params or {}).values())
+                result = await conn.execute(query, *param_values)
                 return {
                     "status": "executed",
                     "result": result,
@@ -317,21 +343,41 @@ class ConnectorService:
             header_name = config.get("auth_config", {}).get("header_name", "X-API-Key")
             headers[header_name] = config.get("auth_config", {}).get("api_key", "")
 
-        method = params.get("method", "GET") if params else "GET"
+        # SECURITY: Validate HTTP method against whitelist
+        allowed_methods = {"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
+        method = (params.get("method", "GET") if params else "GET").upper()
+        if method not in allowed_methods:
+            raise ValueError(f"Invalid HTTP method: {method}")
+
         path = query or params.get("path", "") if params else ""
+
+        # SECURITY: Sanitize path to prevent URL manipulation
+        # Strip any protocol/host prefix that could redirect the request
+        if path:
+            # Remove leading slashes and dangerous characters
+            path = path.lstrip("/")
+            # Reject paths that could change the host (e.g., @attacker.com, //evil.com)
+            if "@" in path or path.startswith("/") or "://" in path:
+                raise ValueError("Invalid path: contains forbidden characters")
+
         body = params.get("body", {}) if params else {}
 
+        # Build final URL and re-validate to ensure path didn't bypass SSRF protection
+        final_url = f"{base_url.rstrip('/')}/{path}" if path else base_url
+        if not _validate_connector_url(final_url):
+            raise ValueError("Invalid final URL: SSRF protection triggered")
+
         async with httpx.AsyncClient(timeout=30.0) as client:
-            if method.upper() == "GET":
-                response = await client.get(f"{base_url}{path}", headers=headers, params=body)
-            elif method.upper() == "POST":
-                response = await client.post(f"{base_url}{path}", headers=headers, json=body)
-            elif method.upper() == "PUT":
-                response = await client.put(f"{base_url}{path}", headers=headers, json=body)
-            elif method.upper() == "DELETE":
-                response = await client.delete(f"{base_url}{path}", headers=headers)
+            if method == "GET":
+                response = await client.get(final_url, headers=headers, params=body)
+            elif method == "POST":
+                response = await client.post(final_url, headers=headers, json=body)
+            elif method == "PUT":
+                response = await client.put(final_url, headers=headers, json=body)
+            elif method == "DELETE":
+                response = await client.delete(final_url, headers=headers)
             else:
-                response = await client.request(method, f"{base_url}{path}", headers=headers, json=body)
+                response = await client.request(method, final_url, headers=headers, json=body)
 
             try:
                 return response.json()
