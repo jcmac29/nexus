@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.database import get_db
@@ -22,8 +22,8 @@ class SearchRequest(BaseModel):
     tags: list[str] | None = None
     categories: list[str] | None = None
     include_public: bool = True
-    limit: int = 20
-    offset: int = 0
+    limit: int = Field(default=20, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
     search_type: str = "hybrid"  # text, semantic, hybrid
 
 

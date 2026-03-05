@@ -145,6 +145,7 @@ async def get_health_history(
 
 @router.get("/system", response_model=SystemHealthResponse)
 async def get_system_health(
+    agent: Agent = Depends(get_current_agent),  # SECURITY: Require authentication
     service: HealthService = Depends(get_health_service),
 ):
     """Get overall system health summary."""

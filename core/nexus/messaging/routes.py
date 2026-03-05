@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.auth import get_current_agent
@@ -59,8 +59,8 @@ async def send_message(
 async def get_messages(
     inbox: bool = True,
     unread_only: bool = False,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     agent: Agent = Depends(get_current_agent),
     service: MessagingService = Depends(get_messaging_service),
 ):

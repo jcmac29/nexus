@@ -58,8 +58,8 @@ async def query_logs(
     start_time: datetime | None = None,
     end_time: datetime | None = None,
     success: bool | None = None,
-    limit: int = Query(default=100, le=1000),
-    offset: int = 0,
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
     agent: Agent = Depends(get_current_agent),
     session: AsyncSession = Depends(get_db),
 ):
@@ -148,17 +148,22 @@ async def export_logs(
     return StreamingResponse(
         buffer,
         media_type="application/json",
-        headers={"Content-Disposition": f"attachment; filename={filename}"},
+        # SECURITY: Properly quote filename in Content-Disposition header
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
 @router.get("/actions", response_model=list[str])
-async def list_actions():
+async def list_actions(
+    agent: Agent = Depends(get_current_agent),  # SECURITY: Require authentication
+):
     """List all available audit action types."""
     return [a.value for a in AuditAction]
 
 
 @router.get("/resources", response_model=list[str])
-async def list_resources():
+async def list_resources(
+    agent: Agent = Depends(get_current_agent),  # SECURITY: Require authentication
+):
     """List all available resource types."""
     return [r.value for r in AuditResource]
