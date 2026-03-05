@@ -347,17 +347,110 @@ class DeviceGatewayService:
 
     async def _handle_mavlink(self, device: Device, command: DeviceCommand):
         """Send command via MAVLink (for drones)."""
-        # MAVLink command mapping
-        mavlink_commands = {
-            "takeoff": "MAV_CMD_NAV_TAKEOFF",
-            "land": "MAV_CMD_NAV_LAND",
-            "rtl": "MAV_CMD_NAV_RETURN_TO_LAUNCH",
-            "goto": "MAV_CMD_NAV_WAYPOINT",
-            "arm": "MAV_CMD_COMPONENT_ARM_DISARM",
-            "disarm": "MAV_CMD_COMPONENT_ARM_DISARM",
-            "abort": "MAV_CMD_DO_FLIGHTTERMINATION",
-        }
-        # Would dispatch via pymavlink here
+        from pymavlink import mavutil
+
+        connection_string = device.connection_config.get("connection_string", "udp:127.0.0.1:14550")
+
+        # Get or create connection for this device
+        if device.device_id not in self._mavlink_connections:
+            try:
+                conn = mavutil.mavlink_connection(connection_string)
+                conn.wait_heartbeat(timeout=5)
+                self._mavlink_connections[device.device_id] = conn
+            except Exception as e:
+                raise RuntimeError(f"Failed to connect to MAVLink: {e}")
+
+        conn = self._mavlink_connections[device.device_id]
+        params = command.parameters or {}
+
+        # MAVLink command dispatch
+        if command.command_type == "arm":
+            conn.mav.command_long_send(
+                conn.target_system, conn.target_component,
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                0, 1, 0, 0, 0, 0, 0, 0  # 1 = arm
+            )
+        elif command.command_type == "disarm":
+            conn.mav.command_long_send(
+                conn.target_system, conn.target_component,
+                mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+                0, 0, 0, 0, 0, 0, 0, 0  # 0 = disarm
+            )
+        elif command.command_type == "takeoff":
+            altitude = params.get("altitude", 10)
+            conn.mav.command_long_send(
+                conn.target_system, conn.target_component,
+                mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                0, 0, 0, 0, 0, 0, 0, altitude
+            )
+        elif command.command_type == "land":
+            conn.mav.command_long_send(
+                conn.target_system, conn.target_component,
+                mavutil.mavlink.MAV_CMD_NAV_LAND,
+                0, 0, 0, 0, 0, 0, 0, 0
+            )
+        elif command.command_type == "rtl" or command.command_type == "return_to_base":
+            conn.mav.command_long_send(
+                conn.target_system, conn.target_component,
+                mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH,
+                0, 0, 0, 0, 0, 0, 0, 0
+            )
+        elif command.command_type == "goto":
+            lat = params.get("latitude", 0)
+            lon = params.get("longitude", 0)
+            alt = params.get("altitude", 10)
+            conn.mav.command_long_send(
+                conn.target_system, conn.target_component,
+                mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                0, 0, 0, 0, lat, lon, alt, 0
+            )
+        elif command.command_type == "emergency_stop":
+            # Flight termination - emergency only
+            conn.mav.command_long_send(
+                conn.target_system, conn.target_component,
+                mavutil.mavlink.MAV_CMD_DO_FLIGHTTERMINATION,
+                0, 1, 0, 0, 0, 0, 0, 0  # 1 = terminate
+            )
+        elif command.command_type == "set_mode":
+            mode = params.get("mode", "GUIDED")
+            mode_id = conn.mode_mapping().get(mode, 0)
+            conn.mav.set_mode_send(
+                conn.target_system,
+                mavutil.mavlink.MAV_MODE_FLAG_CUSTOM_MODE_ENABLED,
+                mode_id
+            )
+        elif command.command_type == "load_mission":
+            # Upload waypoints as mission items
+            waypoints = params.get("waypoints", [])
+            await self._upload_mavlink_mission(conn, waypoints)
+        else:
+            raise ValueError(f"Unknown MAVLink command: {command.command_type}")
+
+    async def _upload_mavlink_mission(self, conn, waypoints: list[dict]):
+        """Upload mission waypoints to drone."""
+        from pymavlink import mavutil
+
+        # Clear existing mission
+        conn.mav.mission_clear_all_send(conn.target_system, conn.target_component)
+
+        # Send mission count
+        conn.mav.mission_count_send(
+            conn.target_system, conn.target_component, len(waypoints)
+        )
+
+        # Upload each waypoint
+        for i, wp in enumerate(waypoints):
+            conn.mav.mission_item_int_send(
+                conn.target_system, conn.target_component,
+                i,  # seq
+                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,
+                mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                0, 1,  # current, autocontinue
+                0, 0, 0, 0,  # params 1-4
+                int(wp.get("latitude", 0) * 1e7),
+                int(wp.get("longitude", 0) * 1e7),
+                wp.get("altitude", 10)
+            )
 
     async def acknowledge_command(self, command_id: str):
         """Mark command as acknowledged by device."""
