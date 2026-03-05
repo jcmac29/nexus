@@ -5,6 +5,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from nexus.auth import get_current_agent
 from nexus.billing.models import UsageType
 from nexus.billing.plans import PLANS, PlanType
 from nexus.billing.schemas import (
@@ -29,6 +30,7 @@ from nexus.billing.schemas import (
 from nexus.billing.service import BillingService
 from nexus.billing.stripe_client import stripe_client
 from nexus.database import get_db
+from nexus.identity.models import Agent
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -38,6 +40,30 @@ router = APIRouter(prefix="/billing", tags=["billing"])
 async def get_billing_service(db: AsyncSession = Depends(get_db)) -> BillingService:
     """Get billing service instance."""
     return BillingService(db)
+
+
+async def get_agent_account_id(
+    agent: Agent = Depends(get_current_agent),
+) -> UUID:
+    """Get the account ID for the current agent."""
+    if hasattr(agent, "account_id") and agent.account_id:
+        return agent.account_id
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Agent is not associated with a billing account",
+    )
+
+
+async def verify_account_access(
+    account_id: UUID,
+    agent: Agent = Depends(get_current_agent),
+) -> None:
+    """Verify the agent has access to the specified account."""
+    if not hasattr(agent, "account_id") or agent.account_id != account_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this account",
+        )
 
 
 def plan_to_response(plan_type: PlanType) -> PlanResponse:
@@ -107,9 +133,17 @@ async def create_account(
 @router.get("/accounts/{account_id}", response_model=AccountResponse)
 async def get_account(
     account_id: UUID,
+    agent: Agent = Depends(get_current_agent),
     service: BillingService = Depends(get_billing_service),
 ):
     """Get account by ID."""
+    # SECURITY: Verify the agent has access to this account
+    if not hasattr(agent, "account_id") or agent.account_id != account_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this account",
+        )
+
     account = await service.get_account_by_id(account_id)
     if not account:
         raise HTTPException(
@@ -166,9 +200,17 @@ async def get_plan(plan_type: str):
 @router.get("/accounts/{account_id}/usage", response_model=UsageResponse)
 async def get_usage(
     account_id: UUID,
+    agent: Agent = Depends(get_current_agent),
     service: BillingService = Depends(get_billing_service),
 ):
     """Get current usage for account."""
+    # SECURITY: Verify the agent has access to this account
+    if not hasattr(agent, "account_id") or agent.account_id != account_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this account",
+        )
+
     usage_data = await service.get_current_month_usage(account_id)
     if not usage_data:
         raise HTTPException(
@@ -192,9 +234,17 @@ async def track_usage(
     account_id: UUID,
     usage_type: str,
     count: int = 1,
+    agent: Agent = Depends(get_current_agent),
     service: BillingService = Depends(get_billing_service),
 ):
     """Track usage for an account (internal use)."""
+    # SECURITY: Verify the agent has access to this account
+    if not hasattr(agent, "account_id") or agent.account_id != account_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to track usage for this account",
+        )
+
     try:
         ut = UsageType(usage_type)
     except ValueError:
@@ -225,9 +275,17 @@ async def track_usage(
 async def check_usage_limit(
     account_id: UUID,
     usage_type: str,
+    agent: Agent = Depends(get_current_agent),
     service: BillingService = Depends(get_billing_service),
 ):
     """Check if account is within limits for a usage type."""
+    # SECURITY: Verify the agent has access to this account
+    if not hasattr(agent, "account_id") or agent.account_id != account_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to check limits for this account",
+        )
+
     try:
         ut = UsageType(usage_type)
     except ValueError:
@@ -252,9 +310,17 @@ async def check_usage_limit(
 async def create_checkout_session(
     account_id: UUID,
     data: CreateCheckoutRequest,
+    agent: Agent = Depends(get_current_agent),
     service: BillingService = Depends(get_billing_service),
 ):
     """Create a Stripe checkout session for subscription."""
+    # SECURITY: Verify the agent has access to this account
+    if not hasattr(agent, "account_id") or agent.account_id != account_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to create checkout for this account",
+        )
+
     account = await service.get_account_by_id(account_id)
     if not account:
         raise HTTPException(
@@ -296,9 +362,17 @@ async def create_checkout_session(
 @router.get("/accounts/{account_id}/subscription", response_model=SubscriptionResponse | None)
 async def get_subscription(
     account_id: UUID,
+    agent: Agent = Depends(get_current_agent),
     service: BillingService = Depends(get_billing_service),
 ):
     """Get active subscription for account."""
+    # SECURITY: Verify the agent has access to this account
+    if not hasattr(agent, "account_id") or agent.account_id != account_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view subscription for this account",
+        )
+
     subscription = await service.get_active_subscription(account_id)
     if not subscription:
         return None
@@ -318,9 +392,17 @@ async def get_subscription(
 async def cancel_subscription(
     account_id: UUID,
     data: CancelSubscriptionRequest,
+    agent: Agent = Depends(get_current_agent),
     service: BillingService = Depends(get_billing_service),
 ):
     """Cancel subscription."""
+    # SECURITY: Verify the agent has access to this account
+    if not hasattr(agent, "account_id") or agent.account_id != account_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to cancel subscription for this account",
+        )
+
     subscription = await service.get_active_subscription(account_id)
     if not subscription:
         raise HTTPException(
@@ -353,9 +435,17 @@ async def cancel_subscription(
 async def get_billing_portal(
     account_id: UUID,
     return_url: str,
+    agent: Agent = Depends(get_current_agent),
     service: BillingService = Depends(get_billing_service),
 ):
     """Get Stripe billing portal URL."""
+    # SECURITY: Verify the agent has access to this account
+    if not hasattr(agent, "account_id") or agent.account_id != account_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access billing portal for this account",
+        )
+
     account = await service.get_account_by_id(account_id)
     if not account:
         raise HTTPException(
@@ -383,9 +473,17 @@ async def get_billing_portal(
 async def list_invoices(
     account_id: UUID,
     limit: int = 10,
+    agent: Agent = Depends(get_current_agent),
     service: BillingService = Depends(get_billing_service),
 ):
     """List invoices for account."""
+    # SECURITY: Verify the agent has access to this account
+    if not hasattr(agent, "account_id") or agent.account_id != account_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to view invoices for this account",
+        )
+
     account = await service.get_account_by_id(account_id)
     if not account:
         raise HTTPException(
