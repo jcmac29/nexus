@@ -72,9 +72,30 @@ class EnvSecretProvider(SecretProvider):
 class FileSecretProvider(SecretProvider):
     """Secret provider using encrypted file storage."""
 
+    # SECURITY: Allowed base directories for secrets files
+    ALLOWED_BASES = ["/etc/nexus", "/var/lib/nexus", "/tmp/nexus"]
+
     def __init__(self, path: str = "/etc/nexus/secrets.json"):
+        # SECURITY: Validate path to prevent arbitrary file access
+        self._validate_path(path)
         self.path = path
         self._encryption = get_encryption_service()
+
+    def _validate_path(self, path: str) -> None:
+        """Validate that path is within allowed directories."""
+        import os.path
+        # Resolve to absolute path and check for traversal
+        abs_path = os.path.abspath(os.path.normpath(path))
+
+        # Must be within one of the allowed base directories
+        allowed = any(
+            abs_path.startswith(os.path.abspath(base))
+            for base in self.ALLOWED_BASES
+        )
+        if not allowed:
+            raise ValueError(
+                f"Secrets file path must be within allowed directories: {self.ALLOWED_BASES}"
+            )
 
     def _load(self) -> dict:
         if os.path.exists(self.path):

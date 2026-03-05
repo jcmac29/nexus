@@ -12,7 +12,7 @@ from nexus.database import get_db
 from nexus.identity.models import Agent
 from nexus.identity.service import IdentityService
 from nexus.oauth.models import OAuthProvider
-from nexus.oauth.service import OAuthService
+from nexus.oauth.service import OAuthService, validate_redirect_uri
 
 router = APIRouter(prefix="/oauth", tags=["oauth"])
 
@@ -62,6 +62,13 @@ async def init_oauth(
 
     Returns authorization URL to redirect user to.
     """
+    # SECURITY: Validate redirect_uri to prevent open redirect attacks
+    if not validate_redirect_uri(request.redirect_uri):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid redirect_uri. Must be HTTPS and from an allowed domain.",
+        )
+
     service = OAuthService(session)
     auth_url, state = service.get_authorization_url(
         provider=request.provider,
@@ -86,6 +93,13 @@ async def oauth_callback(
     - Returns existing agent's API key if OAuth identity is known
     - Creates new agent if this is a new OAuth identity
     """
+    # SECURITY: Validate redirect_uri to prevent open redirect attacks
+    if not validate_redirect_uri(request.redirect_uri):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid redirect_uri. Must be HTTPS and from an allowed domain.",
+        )
+
     oauth_service = OAuthService(session)
     identity_service = IdentityService(session)
 
@@ -205,6 +219,13 @@ async def connect_oauth(
 
     Use this to add Google/GitHub login to an existing account.
     """
+    # SECURITY: Validate redirect_uri to prevent open redirect attacks
+    if not validate_redirect_uri(request.redirect_uri):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid redirect_uri. Must be HTTPS and from an allowed domain.",
+        )
+
     oauth_service = OAuthService(session)
 
     # SECURITY: Validate state token to prevent CSRF attacks

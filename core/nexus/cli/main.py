@@ -379,9 +379,24 @@ def admin_create(
         console.print(f"Valid roles: {', '.join(valid_roles)}")
         raise typer.Exit(1)
 
-    # Validate password length
+    # SECURITY: Validate password strength
+    import re
+    password_errors = []
     if len(password) < 8:
-        console.print("[red]Password must be at least 8 characters[/red]")
+        password_errors.append("at least 8 characters")
+    if not re.search(r"[A-Z]", password):
+        password_errors.append("at least one uppercase letter")
+    if not re.search(r"[a-z]", password):
+        password_errors.append("at least one lowercase letter")
+    if not re.search(r"\d", password):
+        password_errors.append("at least one digit")
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>_\-+=\[\]\\;'/`~]", password):
+        password_errors.append("at least one special character")
+
+    if password_errors:
+        console.print("[red]Password requirements not met:[/red]")
+        for err in password_errors:
+            console.print(f"  - {err}")
         raise typer.Exit(1)
 
     async def run():

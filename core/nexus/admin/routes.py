@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from nexus.admin.auth import get_current_admin
@@ -29,9 +29,46 @@ from nexus.admin.schemas import (
     TeamUpdate,
 )
 from nexus.admin.service import AdminService
+from nexus.cache import get_cache
 from nexus.database import get_db
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+# --- Rate Limiting for Login ---
+
+async def login_rate_limit(request: Request):
+    """
+    SECURITY: Rate limit login attempts to prevent brute force attacks.
+    Limit: 5 attempts per minute per IP address.
+    """
+    cache = await get_cache()
+
+    # Get client IP (handle proxies)
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        client_ip = forwarded.split(",")[0].strip()
+    else:
+        client_ip = request.client.host if request.client else "unknown"
+
+    key = f"ratelimit:admin:login:{client_ip}"
+
+    allowed, current, remaining = await cache.rate_limit_check(
+        key=key,
+        limit=5,  # 5 attempts
+        window_seconds=60,  # per minute
+    )
+
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": "Too many login attempts. Please try again later.",
+                "retry_after": 60,
+            },
+            headers={"Retry-After": "60"},
+        )
 
 
 # ============================================================================
@@ -43,6 +80,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 async def login(
     request: LoginRequest,
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(login_rate_limit),  # SECURITY: Rate limit login attempts
 ):
     """Login with email and password."""
     service = AdminService(db)

@@ -1,8 +1,9 @@
 """OAuth service - Handle OAuth flows."""
 
+import re
 import secrets
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 from uuid import UUID
 
 import httpx
@@ -13,6 +14,72 @@ from nexus.config import get_settings
 from nexus.oauth.models import OAuthConnection, OAuthProvider
 
 settings = get_settings()
+
+
+def validate_redirect_uri(redirect_uri: str) -> bool:
+    """
+    Validate OAuth redirect_uri to prevent open redirect attacks.
+
+    SECURITY: Only allows HTTPS URIs (or HTTP for localhost during development).
+    Validates against a whitelist of allowed domains from settings.
+    """
+    if not redirect_uri:
+        return False
+
+    try:
+        parsed = urlparse(redirect_uri)
+    except Exception:
+        return False
+
+    # Must have scheme and netloc
+    if not parsed.scheme or not parsed.netloc:
+        return False
+
+    # Get hostname (without port)
+    hostname = parsed.hostname
+    if not hostname:
+        return False
+
+    hostname = hostname.lower()
+
+    # Allow localhost only for development (http allowed for localhost)
+    is_localhost = hostname in ("localhost", "127.0.0.1", "::1")
+
+    if is_localhost:
+        # Localhost is only allowed in development mode
+        if not getattr(settings, "debug", False):
+            return False
+        # HTTP is allowed for localhost
+        if parsed.scheme not in ("http", "https"):
+            return False
+    else:
+        # Production: must be HTTPS
+        if parsed.scheme != "https":
+            return False
+
+    # Check against allowed domains from settings
+    allowed_domains = getattr(settings, "oauth_allowed_redirect_domains", [])
+
+    # If no whitelist configured, only allow same-site redirects
+    if not allowed_domains:
+        # Default to the base domain from settings
+        base_domain = getattr(settings, "base_domain", None)
+        if base_domain:
+            allowed_domains = [base_domain]
+        elif is_localhost:
+            # Allow localhost in dev mode if no domains configured
+            return True
+        else:
+            # No configuration = reject
+            return False
+
+    # Check if hostname matches an allowed domain (exact match or subdomain)
+    for allowed in allowed_domains:
+        allowed = allowed.lower().lstrip(".")
+        if hostname == allowed or hostname.endswith(f".{allowed}"):
+            return True
+
+    return False
 
 
 # OAuth provider configurations
