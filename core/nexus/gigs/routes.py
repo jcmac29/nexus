@@ -800,6 +800,14 @@ async def recruit_workers(
     Workers are notified via webhook if configured.
     """
     service = GigService(db)
+
+    # SECURITY: Verify pool ownership before recruiting
+    pool = await service.get_marketplace_pool(pool_id)
+    if not pool:
+        raise HTTPException(status_code=404, detail="Pool not found")
+    if pool.owner_id != agent.id:
+        raise HTTPException(status_code=403, detail="Not authorized to recruit for this pool")
+
     try:
         assignments = await service.recruit_marketplace_workers(pool_id)
         await db.commit()
