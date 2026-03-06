@@ -404,3 +404,13 @@ class TeamService:
         )
         member = result.scalar_one_or_none()
         return member.role if member else None
+
+    async def is_member(self, team_id: UUID, agent_id: UUID) -> bool:
+        """Check if an agent is a member of a team (any role)."""
+        result = await self.db.execute(
+            select(TeamMember).where(
+                TeamMember.team_id == team_id,
+                TeamMember.agent_id == agent_id,
+            )
+        )
+        return result.scalar_one_or_none() is not None

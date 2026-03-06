@@ -105,12 +105,19 @@ async def list_my_teams(
 @router.get("/{team_id}", response_model=TeamResponse)
 async def get_team(
     team_id: UUID,
+    agent: Agent = Depends(get_current_agent),
     service: TeamService = Depends(get_team_service),
 ):
     """Get a team by ID."""
     team = await service.get_team(team_id)
     if not team:
         raise HTTPException(status_code=404, detail="Team not found")
+
+    # SECURITY: Verify the requesting agent is a member of the team
+    is_member = await service.is_member(team_id, agent.id)
+    if not is_member:
+        raise HTTPException(status_code=403, detail="Not authorized to access this team")
+
     return _team_to_response(team)
 
 

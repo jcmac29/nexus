@@ -128,10 +128,14 @@ async def register_device(
         "device_type": device.device_type.value,
         "protocol": device.protocol.value,
         "status": device.status.value,
+        "capabilities": device.capabilities,
+        "sensors": device.sensors,
+        "autonomy_level": device.autonomy_level,
+        "geofence": device.geofence,
     }
 
 
-@router.get("/")
+@router.get("")
 async def list_devices(
     device_type: str | None = None,
     fleet_id: str | None = None,
@@ -668,6 +672,7 @@ async def create_mission(
         "id": str(mission.id),
         "name": mission.name,
         "status": mission.status,
+        "waypoints": mission.waypoints or [],
     }
 
 
