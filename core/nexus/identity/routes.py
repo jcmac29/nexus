@@ -260,10 +260,20 @@ async def create_api_key(
 
     **Save the API key securely - it will only be shown once.**
     """
+    # SECURITY: Validate scopes against whitelist
+    from nexus.auth import validate_scopes
+    try:
+        validated_scopes = validate_scopes(data.scopes)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
     api_key_model, api_key_string = await service.create_api_key(
         agent_id=current_agent.id,
         name=data.name,
-        scopes=data.scopes,
+        scopes=validated_scopes,
         expires_in_days=data.expires_in_days,
     )
 

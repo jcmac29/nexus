@@ -13,6 +13,61 @@ from nexus.database import get_db
 if TYPE_CHECKING:
     from nexus.identity.models import Agent
 
+
+# SECURITY: Valid API key scopes whitelist
+# Only these scopes can be assigned to API keys
+VALID_SCOPES = {
+    # General access
+    "read",
+    "write",
+    "delete",
+    "admin",
+    # Resource-specific scopes
+    "memory:read",
+    "memory:write",
+    "memory:delete",
+    "discovery:read",
+    "discovery:write",
+    "teams:read",
+    "teams:write",
+    "teams:manage",
+    "webhooks:read",
+    "webhooks:write",
+    "webhooks:manage",
+    "storage:read",
+    "storage:write",
+    "llm:execute",
+    "graph:read",
+    "graph:write",
+    "messages:read",
+    "messages:write",
+    "orchestration:execute",
+}
+
+
+def validate_scopes(scopes: list[str] | None) -> list[str]:
+    """
+    SECURITY: Validate that requested scopes are in the whitelist.
+
+    Args:
+        scopes: List of scope strings to validate
+
+    Returns:
+        Validated list of scopes
+
+    Raises:
+        ValueError: If any scope is invalid
+    """
+    if not scopes:
+        return []
+
+    invalid_scopes = set(scopes) - VALID_SCOPES
+    if invalid_scopes:
+        raise ValueError(f"Invalid scopes: {', '.join(sorted(invalid_scopes))}")
+
+    return scopes
+
+
 api_key_header = APIKeyHeader(name="Authorization", auto_error=False)
 
 

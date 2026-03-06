@@ -10,6 +10,66 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from nexus import __version__
 
 
+import asyncio
+from collections import defaultdict
+
+
+class ConcurrentRequestLimiter(BaseHTTPMiddleware):
+    """
+    SECURITY: Limit concurrent requests per IP and globally to prevent DoS.
+
+    Limits:
+    - Per IP: 50 concurrent requests
+    - Global: 10,000 concurrent requests
+    """
+
+    MAX_CONCURRENT_PER_IP = 50
+    MAX_CONCURRENT_GLOBAL = 10000
+
+    def __init__(self, app):
+        super().__init__(app)
+        self._ip_counts: dict[str, int] = defaultdict(int)
+        self._global_count = 0
+        self._lock = asyncio.Lock()
+
+    async def dispatch(self, request: Request, call_next):
+        # Get client IP
+        client_ip = request.client.host if request.client else "unknown"
+
+        async with self._lock:
+            # Check global limit
+            if self._global_count >= self.MAX_CONCURRENT_GLOBAL:
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=503,
+                    content={"detail": "Server at capacity. Please try again later."},
+                    headers={"Retry-After": "5"},
+                )
+
+            # Check per-IP limit
+            if self._ip_counts[client_ip] >= self.MAX_CONCURRENT_PER_IP:
+                from fastapi.responses import JSONResponse
+                return JSONResponse(
+                    status_code=429,
+                    content={"detail": "Too many concurrent requests from this IP."},
+                    headers={"Retry-After": "1"},
+                )
+
+            # Increment counters
+            self._global_count += 1
+            self._ip_counts[client_ip] += 1
+
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            async with self._lock:
+                self._global_count -= 1
+                self._ip_counts[client_ip] -= 1
+                if self._ip_counts[client_ip] <= 0:
+                    del self._ip_counts[client_ip]
+
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers to all responses."""
 
@@ -196,6 +256,9 @@ app.add_middleware(
 
 # Security headers middleware (runs first - outermost)
 app.add_middleware(SecurityHeadersMiddleware)
+
+# SECURITY: Concurrent request limiter to prevent DoS
+app.add_middleware(ConcurrentRequestLimiter)
 
 # Observability middleware (order matters - tracing first, then logging, then metrics)
 app.add_middleware(MetricsMiddleware)

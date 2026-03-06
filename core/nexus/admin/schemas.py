@@ -13,14 +13,24 @@ def validate_password_strength(password: str) -> str:
     """
     SECURITY: Validate password meets complexity requirements.
     Requirements:
-    - At least 8 characters
+    - At least 12 characters (increased from 8 for better security)
     - At least one uppercase letter
     - At least one lowercase letter
     - At least one digit
     - At least one special character
+    - Not a commonly used password
     """
-    if len(password) < 8:
-        raise ValueError("Password must be at least 8 characters")
+    # SECURITY: Common passwords to block
+    COMMON_PASSWORDS = {
+        "password123!", "admin123456!", "welcome12345!", "changeme1234!",
+        "letmein12345!", "qwerty123456!", "password1234!", "admin1234567!",
+    }
+
+    if password.lower() in COMMON_PASSWORDS:
+        raise ValueError("This password is too common. Please choose a stronger password.")
+
+    if len(password) < 12:
+        raise ValueError("Password must be at least 12 characters")
     if not re.search(r"[A-Z]", password):
         raise ValueError("Password must contain at least one uppercase letter")
     if not re.search(r"[a-z]", password):

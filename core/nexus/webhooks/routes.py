@@ -68,7 +68,7 @@ async def create_webhook(
 async def list_webhooks(
     include_inactive: bool = Query(default=False),
     limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=100000),  # SECURITY: Limit offset
     agent: Agent = Depends(get_current_agent),
     service: WebhookService = Depends(get_webhook_service),
 ):
@@ -187,7 +187,7 @@ async def list_delivery_logs(
     webhook_id: UUID,
     status_filter: DeliveryStatus | None = Query(default=None, alias="status"),
     limit: int = Query(default=50, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=100000),  # SECURITY: Limit offset
     agent: Agent = Depends(get_current_agent),
     service: WebhookService = Depends(get_webhook_service),
 ):

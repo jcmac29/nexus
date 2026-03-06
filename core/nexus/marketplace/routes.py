@@ -79,7 +79,7 @@ async def search_listings(
     tags: str | None = Query(None, description="Comma-separated tags"),
     featured: bool = False,
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),  # SECURITY: Limit offset
     service: MarketplaceService = Depends(get_marketplace_service),
 ):
     """Search marketplace listings."""
@@ -196,7 +196,7 @@ async def unpublish_listing(
 async def get_listing_reviews(
     listing_id: UUID,
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),  # SECURITY: Limit offset
     service: MarketplaceService = Depends(get_marketplace_service),
 ):
     """Get reviews for a listing."""

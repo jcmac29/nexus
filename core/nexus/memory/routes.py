@@ -131,7 +131,7 @@ async def list_memories(
     session_id: str | None = Query(None),
     tags: list[str] | None = Query(None),
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),  # SECURITY: Limit offset to prevent expensive scans
     current_agent: Agent = Depends(get_current_agent),
     service: MemoryService = Depends(get_memory_service),
 ) -> list[MemoryResponse]:

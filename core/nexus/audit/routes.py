@@ -59,7 +59,7 @@ async def query_logs(
     end_time: datetime | None = None,
     success: bool | None = None,
     limit: int = Query(default=100, ge=1, le=1000),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=100000),  # SECURITY: Limit offset
     agent: Agent = Depends(get_current_agent),
     session: AsyncSession = Depends(get_db),
 ):

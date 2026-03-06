@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from nexus.database import Base
+from nexus.security.encryption import EncryptedText
 
 
 class OAuthProvider(str, Enum):
@@ -40,9 +41,9 @@ class OAuthConnection(Base):
     provider_email: Mapped[str | None] = mapped_column(String(255))
     provider_username: Mapped[str | None] = mapped_column(String(255))
 
-    # Tokens (encrypted in production)
-    access_token: Mapped[str] = mapped_column(Text)
-    refresh_token: Mapped[str | None] = mapped_column(Text)
+    # SECURITY: Tokens encrypted at rest using EncryptedText column type
+    access_token: Mapped[str] = mapped_column(EncryptedText)
+    refresh_token: Mapped[str | None] = mapped_column(EncryptedText)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Profile data from provider

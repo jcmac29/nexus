@@ -229,7 +229,7 @@ async def get_transactions(
     owner_type: str,
     owner_id: UUID,
     limit: int = Query(default=50, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=100000),  # SECURITY: Limit offset
     transaction_type: Optional[str] = None,
     agent: Agent = Depends(get_current_agent),
     session: AsyncSession = Depends(get_db),

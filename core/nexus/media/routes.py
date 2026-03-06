@@ -203,7 +203,7 @@ async def upload_media(
 async def list_media(
     media_type: str | None = Query(None, description="Filter by type: image, video, audio, document"),
     limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
+    offset: int = Query(0, ge=0, le=100000),  # SECURITY: Limit offset
     agent: Agent = Depends(get_current_agent),
     service: MediaService = Depends(get_media_service),
 ):

@@ -112,7 +112,7 @@ async def get_node_edges(
     direction: str = Query(default="both", pattern="^(outgoing|incoming|both)$"),
     relationship_types: list[RelationshipType] | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=100000),  # SECURITY: Limit offset
     agent: Agent = Depends(get_current_agent),
     service: GraphService = Depends(get_graph_service),
 ):

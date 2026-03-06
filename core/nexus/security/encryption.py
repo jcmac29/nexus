@@ -134,3 +134,47 @@ def encrypt_value(value: str) -> str:
 def decrypt_value(ciphertext: str) -> str:
     """Decrypt a value using the global encryption service."""
     return get_encryption_service().decrypt(ciphertext)
+
+
+# --- SQLAlchemy Encrypted Column Type ---
+
+from sqlalchemy import Text, TypeDecorator
+
+
+class EncryptedText(TypeDecorator):
+    """
+    SECURITY: SQLAlchemy column type that encrypts data at rest.
+
+    Usage:
+        class MyModel(Base):
+            secret_field: Mapped[str] = mapped_column(EncryptedText)
+
+    The data is encrypted before storage and decrypted on retrieval.
+    """
+
+    impl = Text
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        """Encrypt value before storing in database."""
+        if value is None:
+            return None
+        try:
+            return encrypt_value(value)
+        except Exception:
+            # Log error but don't expose encryption details
+            import logging
+            logging.getLogger(__name__).error("Failed to encrypt value")
+            raise ValueError("Encryption failed")
+
+    def process_result_value(self, value, dialect):
+        """Decrypt value when retrieving from database."""
+        if value is None:
+            return None
+        try:
+            return decrypt_value(value)
+        except Exception:
+            # Log error but don't expose decryption details
+            import logging
+            logging.getLogger(__name__).error("Failed to decrypt value")
+            raise ValueError("Decryption failed")

@@ -201,7 +201,7 @@ async def search_gigs(
     max_budget: float | None = None,
     parallelizable_only: bool = False,
     limit: int = Query(default=50, ge=1, le=100),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=100000),  # SECURITY: Limit offset
     db: AsyncSession = Depends(get_db),
 ):
     """Search available gigs."""

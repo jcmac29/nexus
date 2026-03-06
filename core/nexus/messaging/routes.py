@@ -60,7 +60,7 @@ async def get_messages(
     inbox: bool = True,
     unread_only: bool = False,
     limit: int = Query(default=50, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    offset: int = Query(default=0, ge=0, le=100000),  # SECURITY: Limit offset
     agent: Agent = Depends(get_current_agent),
     service: MessagingService = Depends(get_messaging_service),
 ):
