@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { useApi } from '../hooks/useApi'
+import { useToast } from '../contexts/ToastContext'
 
 interface Agent {
   id: string
@@ -12,6 +13,7 @@ interface Agent {
 export default function Settings() {
   const { user } = useAuth()
   const api = useApi<any>()
+  const toast = useToast()
   const [apiKeys, setApiKeys] = useState<{ id: string; name: string; key: string; created_at: string; agent_name?: string }[]>([])
   const [agents, setAgents] = useState<Agent[]>([])
   const [showNewKey, setShowNewKey] = useState(false)
@@ -121,11 +123,11 @@ export default function Settings() {
 
   async function handleChangePassword() {
     if (passwordForm.newPassword !== passwordForm.confirm) {
-      alert('Passwords do not match')
+      toast.warning('Passwords do not match')
       return
     }
     if (passwordForm.newPassword.length < 8) {
-      alert('Password must be at least 8 characters')
+      toast.warning('Password must be at least 8 characters')
       return
     }
     setSaving(true)
@@ -136,8 +138,10 @@ export default function Settings() {
       })
       setShowPasswordModal(false)
       setPasswordForm({ current: '', newPassword: '', confirm: '' })
-      alert('Password changed successfully')
-    } catch {}
+      toast.success('Password changed successfully')
+    } catch {
+      toast.error('Failed to change password')
+    }
     setSaving(false)
   }
 
@@ -333,7 +337,7 @@ export default function Settings() {
         <button
           onClick={() => {
             if (confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
-              alert('Please contact support to delete your account.')
+              toast.info('Please contact support to delete your account.')
             }
           }}
           className="px-6 py-2 bg-red-600/20 text-red-400 font-medium rounded-lg hover:bg-red-600/30 transition-colors"

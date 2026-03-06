@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useApi } from '../hooks/useApi'
+import { useToast } from '../contexts/ToastContext'
 
 interface SellerAccount {
   id: string
@@ -36,6 +37,7 @@ interface Earning {
 
 export default function Earnings() {
   const api = useApi<any>()
+  const toast = useToast()
   const [sellerAccount, setSellerAccount] = useState<SellerAccount | null>(null)
   const [payouts, setPayouts] = useState<Payout[]>([])
   const [earnings, setEarnings] = useState<Earning[]>([])
@@ -86,16 +88,16 @@ export default function Earnings() {
       if (data.onboarding_url) {
         window.location.href = data.onboarding_url
       } else {
-        alert('Payout account setup initiated. Please check your email for next steps.')
+        toast.success('Payout account setup initiated. Please check your email for next steps.')
       }
     } catch (err: any) {
       const message = err?.message || 'Failed to set up payout account'
       if (message.includes('Agent not associated') || message.includes('not authenticated')) {
-        alert('Please create an agent first in the Agents section, then try again.')
+        toast.warning('Please create an agent first in the Agents section, then try again.')
       } else if (message.includes('Stripe is not configured')) {
-        alert('Stripe payments are being configured. Please try again later.')
+        toast.info('Stripe payments are being configured. Please try again later.')
       } else {
-        alert(`Setup failed: ${message}`)
+        toast.error(`Setup failed: ${message}`)
       }
     }
     setLoading(false)
@@ -104,11 +106,11 @@ export default function Earnings() {
   async function handleWithdraw() {
     const amount = parseFloat(withdrawAmount)
     if (isNaN(amount) || amount < (sellerAccount?.minimum_payout || 10)) {
-      alert(`Minimum withdrawal is $${sellerAccount?.minimum_payout || 10}`)
+      toast.warning(`Minimum withdrawal is $${sellerAccount?.minimum_payout || 10}`)
       return
     }
     if (amount > (sellerAccount?.pending_balance || 0)) {
-      alert('Amount exceeds available balance')
+      toast.warning('Amount exceeds available balance')
       return
     }
     setLoading(true)

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useApi } from '../hooks/useApi'
+import { useToast } from '../contexts/ToastContext'
 
 interface TeamMember {
   id: string
@@ -48,6 +49,7 @@ type TabType = 'members' | 'projects' | 'agents' | 'activity' | 'settings'
 
 export default function Team() {
   const api = useApi<any>()
+  const toast = useToast()
   const [activeTab, setActiveTab] = useState<TabType>('members')
   const [members, setMembers] = useState<TeamMember[]>([])
   const [invites, setInvites] = useState<Invite[]>([])
@@ -173,8 +175,10 @@ export default function Team() {
     setLoading(true)
     try {
       await api.put('/api/v1/teams/settings', teamSettings)
-      alert('Settings saved!')
-    } catch {}
+      toast.success('Settings saved!')
+    } catch {
+      toast.error('Failed to save settings')
+    }
     setLoading(false)
   }
 
@@ -346,7 +350,7 @@ export default function Team() {
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(`${window.location.origin}/invite/${invite.id}`)
-                          alert('Invite link copied!')
+                          toast.success('Invite link copied!')
                         }}
                         className="text-indigo-400 hover:text-indigo-300 text-sm"
                       >

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useApi } from '../hooks/useApi'
+import { useToast } from '../contexts/ToastContext'
 
 interface CreditBalance {
   available_balance: number
@@ -42,6 +43,7 @@ const DEFAULT_PACKAGES: CreditPackage[] = [
 
 export default function Credits() {
   const api = useApi<any>()
+  const toast = useToast()
   const [balance, setBalance] = useState<CreditBalance | null>(null)
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [packages, setPackages] = useState<CreditPackage[]>(DEFAULT_PACKAGES)
@@ -84,7 +86,7 @@ export default function Credits() {
   async function handleCustomPurchase() {
     const amount = parseFloat(customAmount)
     if (isNaN(amount) || amount < 5) {
-      alert('Minimum purchase is $5')
+      toast.warning('Minimum purchase is $5')
       return
     }
     setLoading(true)

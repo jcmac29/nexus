@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useApi } from '../hooks/useApi'
+import { useToast } from '../contexts/ToastContext'
 
 interface Plan {
   type: string
@@ -67,6 +68,7 @@ const PLANS: Plan[] = [
 
 export default function Billing() {
   const api = useApi<any>()
+  const toast = useToast()
   const [subscription, setSubscription] = useState<Subscription | null>(null)
   const [billingAnnual, setBillingAnnual] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -139,7 +141,7 @@ export default function Billing() {
                     const data = await api.post('/api/v1/billing/portal', {})
                     if (data.portal_url) window.location.href = data.portal_url
                   } catch {
-                    alert('Unable to open billing portal. Please try again.')
+                    toast.error('Unable to open billing portal. Please try again.')
                   }
                 }}
                 className="px-4 py-2 bg-gray-800 text-white rounded-lg hover:bg-gray-700 transition-colors"

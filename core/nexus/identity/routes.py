@@ -240,6 +240,64 @@ async def delete_me(
     await service.delete_agent(current_agent)
 
 
+@router.patch(
+    "/{agent_id}",
+    response_model=AgentResponse,
+    summary="Update a specific agent",
+)
+async def update_agent_by_id(
+    agent_id: UUID,
+    data: AgentUpdate,
+    current_agent: Agent = Depends(get_current_agent),
+    service: IdentityService = Depends(get_identity_service),
+) -> AgentResponse:
+    """
+    Update a specific agent's details.
+
+    Users can only update agents that belong to their account.
+    """
+    # Get the target agent
+    target_agent = await service.get_agent_by_id(agent_id)
+    if not target_agent:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Agent not found",
+        )
+
+    # SECURITY: Verify ownership - agents must belong to same account
+    # If both have no account, allow update only if it's the same agent
+    if target_agent.account_id is None and current_agent.account_id is None:
+        if target_agent.id != current_agent.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="You can only update your own agent",
+            )
+    elif target_agent.account_id != current_agent.account_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="You can only update agents in your account",
+        )
+
+    # Update the agent
+    agent = await service.update_agent(
+        agent=target_agent,
+        name=data.name,
+        description=data.description,
+        metadata=data.metadata,
+    )
+
+    return AgentResponse(
+        id=agent.id,
+        name=agent.name,
+        slug=agent.slug,
+        description=agent.description,
+        metadata=agent.metadata_,
+        status=agent.status.value,
+        created_at=agent.created_at,
+        updated_at=agent.updated_at,
+    )
+
+
 # --- API Key Routes ---
 
 

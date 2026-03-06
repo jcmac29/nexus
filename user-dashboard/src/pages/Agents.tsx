@@ -18,6 +18,9 @@ export default function Agents() {
   const [saving, setSaving] = useState(false)
   const [selectedAgent, setSelectedAgent] = useState<Agent | null>(null)
   const [showConfigModal, setShowConfigModal] = useState(false)
+  const [configForm, setConfigForm] = useState({ name: '', description: '', status: 'active' })
+  const [configSaving, setConfigSaving] = useState(false)
+  const [configError, setConfigError] = useState('')
   const [showKeysModal, setShowKeysModal] = useState(false)
   const [agentKeys, setAgentKeys] = useState<{ id: string; name: string; key: string }[]>([])
   const [newKeyName, setNewKeyName] = useState('')
@@ -48,7 +51,31 @@ export default function Agents() {
 
   function handleConfigure(agent: Agent) {
     setSelectedAgent(agent)
+    setConfigForm({
+      name: agent.name,
+      description: agent.description || '',
+      status: agent.status || 'active'
+    })
+    setConfigError('')
     setShowConfigModal(true)
+  }
+
+  async function handleSaveConfig() {
+    if (!selectedAgent) return
+    setConfigSaving(true)
+    setConfigError('')
+    try {
+      await api.patch(`/api/v1/agents/${selectedAgent.id}`, {
+        name: configForm.name,
+        description: configForm.description
+      })
+      setShowConfigModal(false)
+      setSelectedAgent(null)
+      loadAgents()
+    } catch (err) {
+      setConfigError(err instanceof Error ? err.message : 'Failed to save changes')
+    }
+    setConfigSaving(false)
   }
 
   async function handleViewKeys(agent: Agent) {
@@ -202,31 +229,38 @@ export default function Agents() {
           <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-md border border-gray-800">
             <h2 className="text-2xl font-bold text-white mb-6">Configure Agent</h2>
             <div className="space-y-4">
+              {configError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
+                  <p className="text-red-400 text-sm">{configError}</p>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Name</label>
                 <input
                   type="text"
-                  defaultValue={selectedAgent.name}
+                  value={configForm.name}
+                  onChange={e => setConfigForm({ ...configForm, name: e.target.value })}
                   className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
                 <textarea
-                  defaultValue={selectedAgent.description}
+                  value={configForm.description}
+                  onChange={e => setConfigForm({ ...configForm, description: e.target.value })}
                   rows={3}
                   className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-300 mb-2">Status</label>
-                <select
-                  defaultValue={selectedAgent.status}
-                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  <option value="active">Active</option>
-                  <option value="inactive">Inactive</option>
-                </select>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Slug</label>
+                <input
+                  type="text"
+                  value={selectedAgent.slug}
+                  disabled
+                  className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg text-gray-500 cursor-not-allowed"
+                />
+                <p className="mt-1 text-gray-500 text-xs">Slug cannot be changed after creation</p>
               </div>
               <div className="flex gap-3 pt-4">
                 <button
@@ -234,19 +268,17 @@ export default function Agents() {
                     setShowConfigModal(false)
                     setSelectedAgent(null)
                   }}
-                  className="flex-1 py-3 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
+                  disabled={configSaving}
+                  className="flex-1 py-3 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={() => {
-                    setShowConfigModal(false)
-                    setSelectedAgent(null)
-                    loadAgents()
-                  }}
-                  className="flex-1 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity"
+                  onClick={handleSaveConfig}
+                  disabled={configSaving || !configForm.name}
+                  className="flex-1 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
                 >
-                  Save Changes
+                  {configSaving ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </div>

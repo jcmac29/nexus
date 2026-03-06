@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface Integration {
   id: string
@@ -11,6 +11,8 @@ interface Integration {
   isCustom?: boolean
   baseUrl?: string
 }
+
+const STORAGE_KEY = 'nexus_integrations'
 
 const AVAILABLE_INTEGRATIONS: Omit<Integration, 'id' | 'connected' | 'config'>[] = [
   { name: 'OpenAI', type: 'ai', icon: '🤖', description: 'GPT-4, ChatGPT, DALL-E, Whisper' },
@@ -27,15 +29,37 @@ const AVAILABLE_INTEGRATIONS: Omit<Integration, 'id' | 'connected' | 'config'>[]
   { name: 'Zapier', type: 'automation', icon: '⚡', description: 'Connect 5000+ apps' },
 ]
 
+function loadIntegrations(): Integration[] {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY)
+    return stored ? JSON.parse(stored) : []
+  } catch {
+    return []
+  }
+}
+
+function saveIntegrations(integrations: Integration[]) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(integrations))
+}
+
 export default function Integrations() {
-  const [integrations, setIntegrations] = useState<Integration[]>([])
+  const [integrations, setIntegrations] = useState<Integration[]>(() => loadIntegrations())
   const [showModal, setShowModal] = useState(false)
   const [showCustomModal, setShowCustomModal] = useState(false)
   const [showConfigModal, setShowConfigModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
   const [selectedIntegration, setSelectedIntegration] = useState<typeof AVAILABLE_INTEGRATIONS[0] | null>(null)
   const [configIntegration, setConfigIntegration] = useState<Integration | null>(null)
   const [apiKey, setApiKey] = useState('')
+  const [editApiKey, setEditApiKey] = useState('')
+  const [editDescription, setEditDescription] = useState('')
+  const [editBaseUrl, setEditBaseUrl] = useState('')
   const [customForm, setCustomForm] = useState({ name: '', baseUrl: '', apiKey: '', description: '' })
+
+  // Persist integrations to localStorage
+  useEffect(() => {
+    saveIntegrations(integrations)
+  }, [integrations])
 
   function handleConnect() {
     if (!selectedIntegration || !apiKey) return
@@ -80,6 +104,36 @@ export default function Integrations() {
   function handleConfigure(integration: Integration) {
     setConfigIntegration(integration)
     setShowConfigModal(true)
+  }
+
+  function handleEdit(integration: Integration) {
+    setConfigIntegration(integration)
+    setEditApiKey('')
+    setEditDescription(integration.description)
+    setEditBaseUrl(integration.baseUrl || '')
+    setShowEditModal(true)
+  }
+
+  function handleSaveEdit() {
+    if (!configIntegration) return
+
+    const updatedIntegrations = integrations.map(i => {
+      if (i.id === configIntegration.id) {
+        return {
+          ...i,
+          description: editDescription,
+          baseUrl: i.isCustom ? editBaseUrl : i.baseUrl,
+          config: editApiKey
+            ? { apiKey: editApiKey.slice(0, 8) + '...' }
+            : i.config
+        }
+      }
+      return i
+    })
+
+    setIntegrations(updatedIntegrations)
+    setShowEditModal(false)
+    setConfigIntegration(null)
   }
 
   return (
@@ -332,13 +386,16 @@ export default function Integrations() {
                 </div>
               )}
 
-              <div className="p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
-                <p className="text-yellow-400 text-sm">
-                  To update your API key, disconnect and reconnect this integration.
-                </p>
-              </div>
-
               <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowConfigModal(false)
+                    handleEdit(configIntegration)
+                  }}
+                  className="flex-1 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition-colors"
+                >
+                  Edit
+                </button>
                 <button
                   onClick={() => {
                     setShowConfigModal(false)
@@ -347,6 +404,79 @@ export default function Integrations() {
                   className="flex-1 py-3 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
                 >
                   Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Integration Modal */}
+      {showEditModal && configIntegration && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-md border border-gray-800">
+            <div className="flex items-center gap-4 mb-6">
+              <span className="text-4xl">{configIntegration.icon}</span>
+              <div>
+                <h2 className="text-2xl font-bold text-white">Edit {configIntegration.name}</h2>
+                <p className="text-gray-400">Update integration settings</p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
+                <input
+                  type="text"
+                  value={editDescription}
+                  onChange={e => setEditDescription(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="What does this integration do?"
+                />
+              </div>
+
+              {configIntegration.isCustom && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Base URL</label>
+                  <input
+                    type="url"
+                    value={editBaseUrl}
+                    onChange={e => setEditBaseUrl(e.target.value)}
+                    className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="https://api.example.com/v1"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">New API Key (optional)</label>
+                <input
+                  type="password"
+                  value={editApiKey}
+                  onChange={e => setEditApiKey(e.target.value)}
+                  className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Leave blank to keep current key"
+                />
+                <p className="mt-2 text-gray-500 text-xs">
+                  Current key: {configIntegration.config?.apiKey || '••••••••'}
+                </p>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowEditModal(false)
+                    setConfigIntegration(null)
+                  }}
+                  className="flex-1 py-3 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  className="flex-1 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity"
+                >
+                  Save Changes
                 </button>
               </div>
             </div>
