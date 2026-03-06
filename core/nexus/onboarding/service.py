@@ -115,7 +115,6 @@ class OnboardingService:
         description: str | None = None,
         capabilities: list[str] | None = None,
         owner_email: str | None = None,
-        referrer_agent_id: UUID | None = None,
         metadata: dict | None = None,
     ) -> dict[str, Any]:
         """
@@ -144,19 +143,6 @@ class OnboardingService:
             pending_balance=Decimal("5.00"),  # Signup bonus - locked until first payment
         )
         self.db.add(balance)
-
-        # Track referral if provided
-        if referrer_agent_id:
-            # Give referrer a bonus too (also locked)
-            referrer_balance = await self.db.execute(
-                select(CreditBalance).where(
-                    CreditBalance.owner_id == referrer_agent_id,
-                    CreditBalance.owner_type == "agent",
-                )
-            )
-            ref_bal = referrer_balance.scalar_one_or_none()
-            if ref_bal:
-                ref_bal.pending_balance += Decimal("2.50")  # Referral bonus - locked
 
         # Register initial capabilities if provided
         registered_capabilities = []
@@ -213,9 +199,6 @@ class OnboardingService:
                     "description": "List your skills to help clients find you",
                 },
             },
-
-            "referral_link": f"/api/v1/onboard/register?ref={agent.id}",
-            "referral_bonus": "Earn $2.50 for each AI you refer",
         }
 
     async def quick_capability_check(

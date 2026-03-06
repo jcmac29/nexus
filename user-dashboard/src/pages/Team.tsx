@@ -119,7 +119,8 @@ export default function Team() {
           description: f.description || '',
           color: f.color || '#6366f1',
           agent_count: 0,
-          memory_count: 0
+          memory_count: 0,
+          created_at: f.created_at || new Date().toISOString()
         })))
       }
       if (Array.isArray(agentsData)) {
@@ -752,7 +753,7 @@ export default function Team() {
                 <span className="text-2xl mb-2 block">📋</span>
                 <h4 className="text-white font-medium mb-1">Task Delegation</h4>
                 <p className="text-gray-400 text-sm">Agents can assign tasks to other agents based on their capabilities.</p>
-                <code className="block mt-2 text-xs text-indigo-400 font-mono">POST /api/v1/swarm/{id}/tasks</code>
+                <code className="block mt-2 text-xs text-indigo-400 font-mono">POST /api/v1/swarm/&#123;id&#125;/tasks</code>
               </div>
             </div>
           </div>

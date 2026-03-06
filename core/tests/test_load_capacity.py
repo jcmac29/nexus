@@ -446,7 +446,6 @@ class TestCapacityEstimation:
 class TestResourceExhaustion:
     """Test resistance to resource exhaustion attacks."""
 
-    @pytest.mark.skip(reason="TODO: Add request body size limit enforcement")
     @pytest.mark.asyncio
     async def test_large_payload_rejection(self, authenticated_client: AsyncClient):
         """Test that oversized payloads are rejected quickly."""

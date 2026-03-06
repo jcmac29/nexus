@@ -1,8 +1,6 @@
 # Nexus Production Stack
 # Usage: docker compose -f docker-compose.prod.yml up -d
 
-version: '3.8'
-
 services:
   # ==========================================================================
   # Core Services

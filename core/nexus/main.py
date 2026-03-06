@@ -14,6 +14,36 @@ import asyncio
 from collections import defaultdict
 
 
+class RequestBodySizeLimiter(BaseHTTPMiddleware):
+    """
+    SECURITY: Limit request body size to prevent resource exhaustion.
+
+    Rejects requests with Content-Length > MAX_BODY_SIZE with 413 Payload Too Large.
+    Default limit: 1MB (1,048,576 bytes)
+    """
+
+    MAX_BODY_SIZE = 1 * 1024 * 1024  # 1MB
+
+    async def dispatch(self, request: Request, call_next):
+        # Check Content-Length header
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                size = int(content_length)
+                if size > self.MAX_BODY_SIZE:
+                    from fastapi.responses import JSONResponse
+                    return JSONResponse(
+                        status_code=413,
+                        content={
+                            "detail": f"Request body too large. Maximum size is {self.MAX_BODY_SIZE // 1024}KB."
+                        },
+                    )
+            except ValueError:
+                pass  # Invalid content-length, let it proceed
+
+        return await call_next(request)
+
+
 class ConcurrentRequestLimiter(BaseHTTPMiddleware):
     """
     SECURITY: Limit concurrent requests per IP and globally to prevent DoS.
@@ -256,6 +286,9 @@ app.add_middleware(
 
 # Security headers middleware (runs first - outermost)
 app.add_middleware(SecurityHeadersMiddleware)
+
+# SECURITY: Request body size limiter to prevent resource exhaustion
+app.add_middleware(RequestBodySizeLimiter)
 
 # SECURITY: Concurrent request limiter to prevent DoS
 app.add_middleware(ConcurrentRequestLimiter)
