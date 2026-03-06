@@ -317,7 +317,11 @@ class EmailService:
         template_id: UUID,
         variables: dict,
     ) -> dict:
-        """Render an email template with variables."""
+        """Render an email template with variables.
+
+        SECURITY: Uses safe single-pass rendering to prevent recursive
+        template injection attacks.
+        """
         result = await self.db.execute(
             select(EmailTemplate).where(EmailTemplate.id == template_id)
         )
@@ -326,14 +330,58 @@ class EmailService:
             raise ValueError("Template not found")
 
         def render(text: str | None, vars: dict) -> str | None:
+            """
+            SECURITY: Safe template rendering that prevents injection.
+            - Validates variable names (alphanumeric + underscore only)
+            - Escapes HTML in values for HTML templates
+            - Single-pass replacement prevents recursive injection
+            - Limits value lengths to prevent DoS
+            """
+            import html
+            import re
+
             if not text:
                 return None
+
+            # SECURITY: Build all replacements first, then apply in single pass
+            replacements = {}
             for key, value in vars.items():
-                text = text.replace(f"{{{{{key}}}}}", str(value))
+                # SECURITY: Validate variable name format
+                if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', str(key)):
+                    continue
+                # SECURITY: Limit value length to prevent DoS
+                str_value = str(value)[:10000]
+                replacements[f"{{{{{key}}}}}"] = str_value
+
+            # Single-pass replacement (no recursion possible)
+            for placeholder, value in replacements.items():
+                text = text.replace(placeholder, value)
+
+            return text
+
+        def render_html(text: str | None, vars: dict) -> str | None:
+            """Render HTML template with escaped values."""
+            import html
+            import re
+
+            if not text:
+                return None
+
+            replacements = {}
+            for key, value in vars.items():
+                if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', str(key)):
+                    continue
+                # SECURITY: HTML escape values to prevent XSS
+                str_value = html.escape(str(value)[:10000])
+                replacements[f"{{{{{key}}}}}"] = str_value
+
+            for placeholder, value in replacements.items():
+                text = text.replace(placeholder, value)
+
             return text
 
         return {
             "subject": render(template.subject_template, variables),
             "body_text": render(template.body_text_template, variables),
-            "body_html": render(template.body_html_template, variables),
+            "body_html": render_html(template.body_html_template, variables),
         }

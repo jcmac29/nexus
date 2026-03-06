@@ -424,11 +424,30 @@ class OrchestrationService:
                     result[output_key] = "".join(str(p) for p in parts if p)
                 elif transform_type == "template":
                     template = transform.get("template", "")
-                    # SECURITY: Use safe string substitution instead of .format()
-                    # Only substitute explicitly declared variables to prevent injection
+                    # SECURITY: Safe template substitution with validation
+                    # - Validate variable names against regex
+                    # - Only substitute explicitly declared variables
+                    # - Escape values to prevent injection
+                    # - Limit value lengths to prevent DoS
+                    import re
+                    import html
+
+                    # SECURITY: Sensitive keys that should never be exposed
+                    SENSITIVE_KEYS = {"password", "secret", "token", "key", "credential", "auth"}
+
                     for var_name in transform.get("variables", []):
+                        # SECURITY: Validate variable name format
+                        if not isinstance(var_name, str):
+                            continue
+                        if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', var_name):
+                            continue
+                        # SECURITY: Block access to sensitive state keys
+                        if any(sensitive in var_name.lower() for sensitive in SENSITIVE_KEYS):
+                            continue
                         if var_name in state:
-                            template = template.replace(f"{{{var_name}}}", str(state[var_name]))
+                            # SECURITY: Escape and limit value
+                            safe_value = html.escape(str(state[var_name])[:10000])
+                            template = template.replace(f"{{{var_name}}}", safe_value)
                     result[output_key] = template
 
         return result
