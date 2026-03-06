@@ -47,17 +47,23 @@ async def create_webhook(
     Returns the webhook with its secret. **The secret is only shown once.**
     Store it securely to verify webhook signatures.
     """
-    endpoint, secret = await service.create_endpoint(
-        agent_id=agent.id,
-        name=data.name,
-        url=str(data.url),
-        event_types=data.event_types,
-        description=data.description,
-        retry_policy=data.retry_policy,
-        max_retries=data.max_retries,
-        timeout_seconds=data.timeout_seconds,
-        custom_headers=data.custom_headers,
-    )
+    try:
+        endpoint, secret = await service.create_endpoint(
+            agent_id=agent.id,
+            name=data.name,
+            url=str(data.url),
+            event_types=data.event_types,
+            description=data.description,
+            retry_policy=data.retry_policy,
+            max_retries=data.max_retries,
+            timeout_seconds=data.timeout_seconds,
+            custom_headers=data.custom_headers,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
     return WebhookSecretResponse(
         webhook=WebhookResponse.model_validate(endpoint),
         secret=secret,

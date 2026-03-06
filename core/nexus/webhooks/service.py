@@ -68,10 +68,14 @@ def validate_webhook_url(url: str) -> None:
     # Block private IP ranges
     try:
         ip = ipaddress.ip_address(hostname)
+        # IP address parsed successfully - check if it's private/reserved
         if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
             raise ValueError("Webhook URL cannot point to private or reserved IP addresses")
-    except ValueError:
-        # Not an IP address, it's a hostname - check for suspicious patterns
+    except ValueError as e:
+        # Re-raise if it's our security error
+        if "private or reserved" in str(e):
+            raise
+        # Otherwise it's not an IP address - continue with hostname checks
         pass
 
     # Block internal-looking hostnames
