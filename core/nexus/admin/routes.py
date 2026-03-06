@@ -31,6 +31,7 @@ from nexus.admin.schemas import (
 from nexus.admin.service import AdminService
 from nexus.cache import get_cache
 from nexus.database import get_db
+from nexus.security.ip_utils import get_client_ip
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -44,12 +45,8 @@ async def login_rate_limit(request: Request):
     """
     cache = await get_cache()
 
-    # Get client IP (handle proxies)
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
-    else:
-        client_ip = request.client.host if request.client else "unknown"
+    # SECURITY: Use secure IP extraction that validates X-Forwarded-For
+    client_ip = get_client_ip(request)
 
     key = f"ratelimit:admin:login:{client_ip}"
 
@@ -78,11 +75,8 @@ async def refresh_rate_limit(request: Request):
     """
     cache = await get_cache()
 
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
-    else:
-        client_ip = request.client.host if request.client else "unknown"
+    # SECURITY: Use secure IP extraction that validates X-Forwarded-For
+    client_ip = get_client_ip(request)
 
     key = f"ratelimit:admin:refresh:{client_ip}"
 

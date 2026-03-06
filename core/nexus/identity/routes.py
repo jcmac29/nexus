@@ -20,6 +20,7 @@ from nexus.identity.schemas import (
     APIKeyRotateRequest,
 )
 from nexus.identity.service import IdentityService
+from nexus.security.ip_utils import get_client_ip
 
 router = APIRouter(prefix="/agents", tags=["identity"])
 
@@ -39,12 +40,8 @@ async def registration_rate_limit(request: Request):
     """
     cache = await get_cache()
 
-    # Get client IP (handle proxies)
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
-    else:
-        client_ip = request.client.host if request.client else "unknown"
+    # SECURITY: Use secure IP extraction that validates X-Forwarded-For
+    client_ip = get_client_ip(request)
 
     key = f"ratelimit:registration:{client_ip}"
 
@@ -73,11 +70,8 @@ async def api_key_creation_rate_limit(request: Request):
     """
     cache = await get_cache()
 
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
-    else:
-        client_ip = request.client.host if request.client else "unknown"
+    # SECURITY: Use secure IP extraction that validates X-Forwarded-For
+    client_ip = get_client_ip(request)
 
     key = f"ratelimit:apikey_create:{client_ip}"
 

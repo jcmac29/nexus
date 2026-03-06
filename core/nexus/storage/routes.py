@@ -4,16 +4,80 @@ from __future__ import annotations
 
 import os
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File, Query
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from nexus.cache import get_cache
 from nexus.database import get_db
 from nexus.auth import get_current_agent
 from nexus.identity.models import Agent
 from nexus.storage.service import StorageService
 
 router = APIRouter(prefix="/storage", tags=["storage"])
+
+
+# --- SECURITY: File Upload Rate Limiting ---
+
+
+async def file_upload_rate_limit(
+    request: Request,
+    agent: Agent = Depends(get_current_agent),
+):
+    """
+    SECURITY: Rate limit file uploads to prevent storage abuse.
+    Limit: 100 uploads per hour per agent.
+    """
+    cache = await get_cache()
+
+    key = f"ratelimit:file_upload:{agent.id}"
+    allowed, current, remaining = await cache.rate_limit_check(
+        key=key,
+        limit=100,  # 100 uploads per hour
+        window_seconds=3600,
+    )
+
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": "Too many file uploads. Please try again later.",
+                "retry_after": 3600,
+                "limit": 100,
+                "used": current,
+            },
+            headers={"Retry-After": "3600"},
+        )
+
+
+async def presigned_url_rate_limit(
+    request: Request,
+    agent: Agent = Depends(get_current_agent),
+):
+    """
+    SECURITY: Rate limit presigned URL generation to prevent abuse.
+    Limit: 200 presigned URLs per hour per agent.
+    """
+    cache = await get_cache()
+
+    key = f"ratelimit:presigned_url:{agent.id}"
+    allowed, current, remaining = await cache.rate_limit_check(
+        key=key,
+        limit=200,  # 200 presigned URLs per hour
+        window_seconds=3600,
+    )
+
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": "Too many presigned URL requests. Please try again later.",
+                "retry_after": 3600,
+            },
+            headers={"Retry-After": "3600"},
+        )
 
 
 # --- SECURITY: File Upload Validation ---
@@ -85,6 +149,7 @@ async def upload_file(
     entity_id: str | None = None,
     agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(file_upload_rate_limit),  # SECURITY: Rate limit uploads
 ):
     """Upload a file directly."""
     # SECURITY: Validate entity_type against whitelist
@@ -136,6 +201,7 @@ async def get_presigned_upload(
     request: PresignedUploadRequest,
     agent: Agent = Depends(get_current_agent),
     db: AsyncSession = Depends(get_db),
+    _: None = Depends(presigned_url_rate_limit),  # SECURITY: Rate limit presigned URLs
 ):
     """Get a presigned URL for direct upload to S3."""
     service = StorageService(db)

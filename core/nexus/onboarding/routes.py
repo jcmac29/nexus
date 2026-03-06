@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from nexus.database import get_db
 from nexus.onboarding.service import OnboardingService
 from nexus.cache import get_cache
+from nexus.security.ip_utils import get_client_ip
 
 router = APIRouter(prefix="/onboard", tags=["onboarding"])
 
@@ -23,12 +24,8 @@ async def rate_limit_by_ip(
     """Rate limit by IP address for public endpoints."""
     cache = await get_cache()
 
-    # Get client IP (handle proxies)
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
-    else:
-        client_ip = request.client.host if request.client else "unknown"
+    # SECURITY: Use secure IP extraction that validates X-Forwarded-For
+    client_ip = get_client_ip(request)
 
     key = f"ratelimit:onboard:{client_ip}"
 

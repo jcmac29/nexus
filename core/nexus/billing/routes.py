@@ -32,6 +32,7 @@ from nexus.billing.service import BillingService
 from nexus.billing.stripe_client import stripe_client
 from nexus.database import get_db
 from nexus.identity.models import Agent
+from nexus.security.ip_utils import get_client_ip
 
 router = APIRouter(prefix="/billing", tags=["billing"])
 
@@ -46,11 +47,8 @@ async def public_endpoint_rate_limit(request: Request):
     """
     cache = await get_cache()
 
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
-    else:
-        client_ip = request.client.host if request.client else "unknown"
+    # SECURITY: Use secure IP extraction that validates X-Forwarded-For
+    client_ip = get_client_ip(request)
 
     key = f"ratelimit:billing:public:{client_ip}"
 

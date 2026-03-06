@@ -21,6 +21,7 @@ from nexus.users.schemas import (
     UserResponse,
 )
 from nexus.users.service import UserService
+from nexus.security.ip_utils import get_client_ip
 
 router = APIRouter(prefix="/identity", tags=["users"])
 
@@ -67,11 +68,8 @@ async def auth_rate_limit(request: Request):
     """Rate limit auth endpoints to prevent brute force attacks."""
     cache = await get_cache()
 
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
-    else:
-        client_ip = request.client.host if request.client else "unknown"
+    # SECURITY: Use secure IP extraction that validates X-Forwarded-For
+    client_ip = get_client_ip(request)
 
     key = f"ratelimit:auth:{client_ip}"
     allowed, _, _ = await cache.rate_limit_check(
@@ -86,6 +84,59 @@ async def auth_rate_limit(request: Request):
             detail="Too many attempts. Please try again later.",
             headers={"Retry-After": "300"},
         )
+
+
+async def check_account_lockout(email: str) -> None:
+    """
+    SECURITY: Check if an account is locked due to failed login attempts.
+    Progressive lockout: 5 failures = 5 min, 10 failures = 30 min, 15+ = 1 hour.
+    """
+    cache = await get_cache()
+
+    lockout_key = f"account_lockout:{email.lower()}"
+    lockout_until = await cache.get(lockout_key)
+
+    if lockout_until:
+        raise HTTPException(
+            status_code=status.HTTP_423_LOCKED,
+            detail={
+                "error": "account_locked",
+                "message": "Account temporarily locked due to too many failed login attempts.",
+            },
+        )
+
+
+async def record_failed_login(email: str) -> None:
+    """
+    SECURITY: Record a failed login attempt and apply lockout if threshold exceeded.
+    """
+    cache = await get_cache()
+
+    failures_key = f"login_failures:{email.lower()}"
+
+    # Increment failure count (with 1-hour expiry)
+    failures = await cache.get(failures_key)
+    failures = int(failures) + 1 if failures else 1
+    await cache.set(failures_key, str(failures), ttl=3600)
+
+    # Apply progressive lockout
+    lockout_key = f"account_lockout:{email.lower()}"
+    if failures >= 15:
+        # 15+ failures: 1 hour lockout
+        await cache.set(lockout_key, "1", ttl=3600)
+    elif failures >= 10:
+        # 10+ failures: 30 minute lockout
+        await cache.set(lockout_key, "1", ttl=1800)
+    elif failures >= 5:
+        # 5+ failures: 5 minute lockout
+        await cache.set(lockout_key, "1", ttl=300)
+
+
+async def clear_login_failures(email: str) -> None:
+    """Clear failed login attempts after successful login."""
+    cache = await get_cache()
+    await cache.delete(f"login_failures:{email.lower()}")
+    await cache.delete(f"account_lockout:{email.lower()}")
 
 
 # --- Auth Routes ---
@@ -121,10 +172,8 @@ async def register(
 
     # Create tokens
     user_agent = request.headers.get("User-Agent")
-    forwarded = request.headers.get("X-Forwarded-For")
-    ip = forwarded.split(",")[0].strip() if forwarded else (
-        request.client.host if request.client else None
-    )
+    # SECURITY: Use secure IP extraction
+    ip = get_client_ip(request)
 
     access_token = service.create_access_token(user.id)
     refresh_token = service.create_refresh_token()
@@ -155,18 +204,24 @@ async def login(
     _: None = Depends(auth_rate_limit),
 ) -> AuthResponse:
     """Authenticate with email and password."""
+    # SECURITY: Check if account is locked before attempting login
+    await check_account_lockout(data.email)
+
     user_agent = request.headers.get("User-Agent")
-    forwarded = request.headers.get("X-Forwarded-For")
-    ip = forwarded.split(",")[0].strip() if forwarded else (
-        request.client.host if request.client else None
-    )
+    # SECURITY: Use secure IP extraction
+    ip = get_client_ip(request)
 
     result = await service.login(data.email, data.password, user_agent, ip)
     if not result:
+        # SECURITY: Record failed login attempt for account lockout
+        await record_failed_login(data.email)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password",
         )
+
+    # SECURITY: Clear failed login attempts on successful login
+    await clear_login_failures(data.email)
 
     user, access_token, refresh_token = result
 

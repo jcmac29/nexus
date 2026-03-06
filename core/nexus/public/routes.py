@@ -13,6 +13,7 @@ from nexus.auth import get_current_agent, get_optional_agent
 from nexus.identity.models import Agent
 from nexus.public.models import ApprovalPolicy, PublishStatus, RequestStatus
 from nexus.public.service import PublicMarketplaceService
+from nexus.security.ip_utils import get_client_ip
 
 router = APIRouter(prefix="/public", tags=["public-marketplace"])
 
@@ -27,11 +28,8 @@ async def public_discovery_rate_limit(request: Request):
     """
     cache = await get_cache()
 
-    forwarded = request.headers.get("X-Forwarded-For")
-    if forwarded:
-        client_ip = forwarded.split(",")[0].strip()
-    else:
-        client_ip = request.client.host if request.client else "unknown"
+    # SECURITY: Use secure IP extraction that validates X-Forwarded-For
+    client_ip = get_client_ip(request)
 
     key = f"ratelimit:public:discovery:{client_ip}"
 
