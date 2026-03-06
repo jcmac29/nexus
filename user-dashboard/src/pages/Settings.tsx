@@ -27,8 +27,18 @@ export default function Settings() {
   const [passwordForm, setPasswordForm] = useState({ current: '', newPassword: '', confirm: '' })
   const [keyError, setKeyError] = useState('')
 
+  // 2FA State
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false)
+  const [twoFactorLoading, setTwoFactorLoading] = useState(false)
+  const [show2FASetupModal, setShow2FASetupModal] = useState(false)
+  const [show2FADisableModal, setShow2FADisableModal] = useState(false)
+  const [twoFactorSetup, setTwoFactorSetup] = useState<{ secret: string; qr_code: string; backup_codes: string[] } | null>(null)
+  const [twoFactorCode, setTwoFactorCode] = useState('')
+  const [backupCodesRemaining, setBackupCodesRemaining] = useState(0)
+
   useEffect(() => {
     loadAgents()
+    load2FAStatus()
   }, [])
 
   async function loadAgents() {
@@ -41,6 +51,64 @@ export default function Settings() {
         setSelectedAgentId(agentList[0].id)
       }
     } catch {}
+  }
+
+  async function load2FAStatus() {
+    try {
+      const data = await api.get('/api/v1/identity/me/2fa')
+      setTwoFactorEnabled(data.enabled)
+      setBackupCodesRemaining(data.backup_codes_remaining || 0)
+    } catch {}
+  }
+
+  async function handleSetup2FA() {
+    setTwoFactorLoading(true)
+    try {
+      const data = await api.post('/api/v1/identity/me/2fa/setup', {})
+      setTwoFactorSetup(data)
+      setShow2FASetupModal(true)
+    } catch (err) {
+      toast.error('Failed to setup 2FA. Please try again.')
+    }
+    setTwoFactorLoading(false)
+  }
+
+  async function handleVerify2FA() {
+    if (!twoFactorCode || twoFactorCode.length < 6) {
+      toast.warning('Please enter a valid 6-digit code')
+      return
+    }
+    setTwoFactorLoading(true)
+    try {
+      await api.post('/api/v1/identity/me/2fa/verify', { code: twoFactorCode })
+      toast.success('Two-factor authentication enabled!')
+      setTwoFactorEnabled(true)
+      setShow2FASetupModal(false)
+      setTwoFactorSetup(null)
+      setTwoFactorCode('')
+      load2FAStatus()
+    } catch {
+      toast.error('Invalid code. Please try again.')
+    }
+    setTwoFactorLoading(false)
+  }
+
+  async function handleDisable2FA() {
+    if (!twoFactorCode || twoFactorCode.length < 6) {
+      toast.warning('Please enter a valid code')
+      return
+    }
+    setTwoFactorLoading(true)
+    try {
+      await api.post('/api/v1/identity/me/2fa/disable', { code: twoFactorCode })
+      toast.success('Two-factor authentication disabled')
+      setTwoFactorEnabled(false)
+      setShow2FADisableModal(false)
+      setTwoFactorCode('')
+    } catch {
+      toast.error('Invalid code. Please try again.')
+    }
+    setTwoFactorLoading(false)
   }
 
   async function handleCreateKey(e: React.FormEvent) {
@@ -321,12 +389,26 @@ export default function Settings() {
             </div>
             <span className="text-gray-400">→</span>
           </button>
-          <button className="w-full flex items-center justify-between p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors">
+          <button
+            onClick={() => twoFactorEnabled ? setShow2FADisableModal(true) : handleSetup2FA()}
+            disabled={twoFactorLoading}
+            className="w-full flex items-center justify-between p-4 bg-gray-800 rounded-lg hover:bg-gray-700 transition-colors disabled:opacity-50"
+          >
             <div>
               <p className="text-white font-medium">Two-Factor Authentication</p>
-              <p className="text-gray-400 text-sm">Add an extra layer of security</p>
+              <p className="text-gray-400 text-sm">
+                {twoFactorEnabled
+                  ? `Enabled (${backupCodesRemaining} backup codes remaining)`
+                  : 'Add an extra layer of security'}
+              </p>
             </div>
-            <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-700 text-gray-400">Coming Soon</span>
+            {twoFactorLoading ? (
+              <span className="text-gray-400">Loading...</span>
+            ) : twoFactorEnabled ? (
+              <span className="px-3 py-1 text-xs font-medium rounded-full bg-green-500/10 text-green-400 border border-green-500/20">Enabled</span>
+            ) : (
+              <span className="text-indigo-400">Setup →</span>
+            )}
           </button>
         </div>
       </div>
@@ -397,6 +479,125 @@ export default function Settings() {
                   {saving ? 'Changing...' : 'Change Password'}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2FA Setup Modal */}
+      {show2FASetupModal && twoFactorSetup && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-lg border border-gray-800 max-h-[90vh] overflow-y-auto">
+            <h2 className="text-2xl font-bold text-white mb-2">Setup Two-Factor Authentication</h2>
+            <p className="text-gray-400 mb-6">Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.)</p>
+
+            {/* QR Code */}
+            <div className="flex justify-center mb-6">
+              <div className="bg-white p-4 rounded-xl">
+                <img src={twoFactorSetup.qr_code} alt="2FA QR Code" className="w-48 h-48" />
+              </div>
+            </div>
+
+            {/* Manual Entry */}
+            <div className="mb-6 p-4 bg-gray-800 rounded-lg">
+              <p className="text-gray-400 text-sm mb-2">Or enter this code manually:</p>
+              <code className="text-indigo-400 font-mono text-lg tracking-wider">{twoFactorSetup.secret}</code>
+            </div>
+
+            {/* Backup Codes */}
+            <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+              <p className="text-yellow-400 font-medium mb-2">Save these backup codes</p>
+              <p className="text-gray-400 text-sm mb-3">
+                Each code can only be used once. Store them securely - you won't see them again.
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {twoFactorSetup.backup_codes.map((code, i) => (
+                  <code key={i} className="px-3 py-1 bg-gray-800 rounded text-white font-mono text-sm">
+                    {code}
+                  </code>
+                ))}
+              </div>
+            </div>
+
+            {/* Verify */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Enter code from authenticator app to verify
+              </label>
+              <input
+                type="text"
+                value={twoFactorCode}
+                onChange={e => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+                maxLength={6}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-center text-2xl tracking-widest font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShow2FASetupModal(false)
+                  setTwoFactorSetup(null)
+                  setTwoFactorCode('')
+                }}
+                className="flex-1 py-3 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleVerify2FA}
+                disabled={twoFactorLoading || twoFactorCode.length !== 6}
+                className="flex-1 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {twoFactorLoading ? 'Verifying...' : 'Enable 2FA'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 2FA Disable Modal */}
+      {show2FADisableModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-gray-900 rounded-2xl p-8 w-full max-w-md border border-gray-800">
+            <h2 className="text-2xl font-bold text-white mb-2">Disable Two-Factor Authentication</h2>
+            <p className="text-gray-400 mb-6">Enter a code from your authenticator app or a backup code to disable 2FA.</p>
+
+            <div className="mb-4 p-4 bg-red-500/10 border border-red-500/20 rounded-lg">
+              <p className="text-red-400 text-sm">
+                Warning: Disabling 2FA will make your account less secure.
+              </p>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-300 mb-2">Verification Code</label>
+              <input
+                type="text"
+                value={twoFactorCode}
+                onChange={e => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 8))}
+                placeholder="Enter code"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white text-center text-xl tracking-widest font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setShow2FADisableModal(false)
+                  setTwoFactorCode('')
+                }}
+                className="flex-1 py-3 bg-gray-800 text-white font-medium rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDisable2FA}
+                disabled={twoFactorLoading || twoFactorCode.length < 6}
+                className="flex-1 py-3 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50"
+              >
+                {twoFactorLoading ? 'Disabling...' : 'Disable 2FA'}
+              </button>
             </div>
           </div>
         </div>

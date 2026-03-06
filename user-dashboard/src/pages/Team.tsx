@@ -92,10 +92,14 @@ export default function Team() {
       const teams = Array.isArray(teamsData) ? teamsData : []
       const teamId = teams[0]?.id
 
-      const [membersData, invitesData, agentsData] = await Promise.all([
+      const [membersData, invitesData, agentsData, foldersData, activityData] = await Promise.all([
         teamId ? api.get(`/api/v1/teams/${teamId}/members`).catch(() => []) : Promise.resolve([]),
         api.get('/api/v1/tenants/invites').catch(() => []),
         api.get('/api/v1/agents/me').catch(() => null).then(agent => agent ? [agent] : []),
+        // Use document folders as projects
+        api.get('/api/v1/documents/folders').catch(() => []),
+        // Fetch recent audit logs for activity
+        api.get('/api/v1/audit/logs?limit=20').catch(() => []),
       ])
       if (Array.isArray(membersData)) setMembers(membersData.map((m: any) => ({
         id: m.id,
@@ -106,8 +110,18 @@ export default function Team() {
         status: 'active'
       })))
       if (Array.isArray(invitesData)) setInvites(invitesData)
-      // Projects endpoint may not exist, use empty array
-      setProjects([])
+      // Map document folders to projects
+      if (Array.isArray(foldersData)) {
+        setProjects(foldersData.map((f: any) => ({
+          id: f.id,
+          name: f.name,
+          slug: f.name.toLowerCase().replace(/\s+/g, '-'),
+          description: f.description || '',
+          color: f.color || '#6366f1',
+          agent_count: 0,
+          memory_count: 0
+        })))
+      }
       if (Array.isArray(agentsData)) {
         setAgents(agentsData.map((a: any) => ({
           ...a,
@@ -116,9 +130,35 @@ export default function Team() {
           owner_name: 'You'
         })))
       }
-      // Activity endpoint may not exist, use empty array
-      setActivities([])
+      // Map audit logs to activity format
+      if (Array.isArray(activityData)) {
+        setActivities(activityData.map((log: any) => ({
+          type: log.resource_type === 'agent' ? 'agent' : 'user',
+          message: formatActivityMessage(log),
+          timestamp: formatTimestamp(log.timestamp)
+        })))
+      }
     } catch {}
+  }
+
+  function formatActivityMessage(log: any): string {
+    const action = log.action?.replace(/_/g, ' ').toLowerCase() || 'performed action'
+    const resource = log.resource_type?.toLowerCase() || 'item'
+    return `${action} on ${resource}${log.resource_id ? ` (${log.resource_id.slice(0, 8)}...)` : ''}`
+  }
+
+  function formatTimestamp(timestamp: string): string {
+    const date = new Date(timestamp)
+    const now = new Date()
+    const diffMs = now.getTime() - date.getTime()
+    const diffMins = Math.floor(diffMs / 60000)
+    const diffHours = Math.floor(diffMs / 3600000)
+    const diffDays = Math.floor(diffMs / 86400000)
+
+    if (diffMins < 1) return 'Just now'
+    if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`
   }
 
   async function handleInvite(e: React.FormEvent) {
@@ -140,7 +180,12 @@ export default function Team() {
     e.preventDefault()
     setLoading(true)
     try {
-      await api.post('/api/v1/projects', projectForm)
+      // Create a document folder as a "project"
+      await api.post('/api/v1/documents/folders', {
+        name: projectForm.name,
+        color: projectForm.color,
+        description: projectForm.description
+      })
       setShowProjectModal(false)
       setProjectForm({ name: '', description: '', color: '#6366f1' })
       loadData()
@@ -717,23 +762,46 @@ export default function Team() {
       {/* Activity Tab */}
       {activeTab === 'activity' && (
         <div className="space-y-6">
+          <div className="bg-gradient-to-r from-orange-500/10 to-amber-500/10 rounded-xl p-6 border border-orange-500/20">
+            <h3 className="text-lg font-bold text-white mb-2">Activity Feed</h3>
+            <p className="text-gray-400">
+              Track all actions from team members and AI agents. See memory operations,
+              agent communications, and team changes in real-time.
+            </p>
+          </div>
+
           <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
-            <h3 className="text-lg font-semibold text-white mb-4">Recent Activity</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-white">Recent Activity</h3>
+              <button
+                onClick={loadData}
+                className="px-3 py-1.5 text-sm bg-gray-800 text-gray-400 hover:text-white rounded-lg transition-colors"
+              >
+                Refresh
+              </button>
+            </div>
             {activities.length === 0 ? (
               <div className="text-center py-12">
                 <span className="text-6xl mb-4 block">📋</span>
                 <h3 className="text-xl font-bold text-white mb-2">No Activity Yet</h3>
-                <p className="text-gray-400">Activity from team members and agents will appear here.</p>
+                <p className="text-gray-400 mb-4">Activity from team members and agents will appear here.</p>
+                <p className="text-gray-500 text-sm">
+                  Actions like creating agents, storing memories, and sending messages are logged automatically.
+                </p>
               </div>
             ) : (
               <div className="space-y-3">
                 {activities.map((activity, i) => (
-                  <div key={i} className="flex items-start gap-4 p-4 bg-gray-800 rounded-lg">
-                    <div className="w-10 h-10 bg-gray-700 rounded-full flex items-center justify-center">
+                  <div key={i} className="flex items-start gap-4 p-4 bg-gray-800 rounded-lg hover:bg-gray-800/80 transition-colors">
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      activity.type === 'agent'
+                        ? 'bg-gradient-to-br from-indigo-500 to-purple-600'
+                        : 'bg-gradient-to-br from-green-500 to-emerald-600'
+                    }`}>
                       {activity.type === 'agent' ? '🤖' : '👤'}
                     </div>
                     <div className="flex-1">
-                      <p className="text-white">{activity.message}</p>
+                      <p className="text-white capitalize">{activity.message}</p>
                       <p className="text-gray-500 text-sm">{activity.timestamp}</p>
                     </div>
                   </div>
@@ -742,23 +810,20 @@ export default function Team() {
             )}
           </div>
 
-          {/* Placeholder Activity */}
+          {/* Activity Types Legend */}
           <div className="bg-gray-900 rounded-xl p-6 border border-gray-800">
-            <h3 className="text-lg font-semibold text-white mb-4">Sample Activity Feed</h3>
-            <div className="space-y-3">
+            <h3 className="text-lg font-semibold text-white mb-4">Activity Types</h3>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { icon: '👤', text: 'You created agent "Research Assistant"', time: 'Just now' },
-                { icon: '🤖', text: 'Research Assistant stored 15 new memories', time: '2 minutes ago' },
-                { icon: '👥', text: 'Sarah joined the team as Member', time: '1 hour ago' },
-                { icon: '🤖', text: 'Code Reviewer sent message to Research Assistant', time: '2 hours ago' },
-                { icon: '📁', text: 'New project "Q1 Analysis" created', time: '3 hours ago' },
-              ].map((item, i) => (
-                <div key={i} className="flex items-center gap-4 p-3 bg-gray-800/50 rounded-lg">
-                  <span className="text-xl">{item.icon}</span>
-                  <div className="flex-1">
-                    <p className="text-gray-300">{item.text}</p>
-                  </div>
-                  <span className="text-gray-500 text-sm">{item.time}</span>
+                { icon: '🔐', label: 'Authentication', desc: 'Login, logout, API keys' },
+                { icon: '🤖', label: 'Agents', desc: 'Create, update, delete' },
+                { icon: '🧠', label: 'Memory', desc: 'Store, search, share' },
+                { icon: '👥', label: 'Teams', desc: 'Members, invites' },
+              ].map(item => (
+                <div key={item.label} className="p-3 bg-gray-800 rounded-lg">
+                  <span className="text-2xl mb-2 block">{item.icon}</span>
+                  <p className="text-white font-medium text-sm">{item.label}</p>
+                  <p className="text-gray-500 text-xs">{item.desc}</p>
                 </div>
               ))}
             </div>

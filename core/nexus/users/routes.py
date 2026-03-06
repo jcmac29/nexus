@@ -408,3 +408,152 @@ async def change_password(
     await service.change_password(current_user, data.new_password)
 
     return {"message": "Password changed successfully"}
+
+
+# --- Two-Factor Authentication ---
+
+
+class TwoFactorSetupResponse(BaseModel):
+    """Response for 2FA setup."""
+    secret: str
+    qr_code: str
+    backup_codes: list[str]
+
+
+class TwoFactorVerifyRequest(BaseModel):
+    """Request to verify/enable 2FA."""
+    code: str
+
+
+class TwoFactorStatusResponse(BaseModel):
+    """Response for 2FA status."""
+    enabled: bool
+    backup_codes_remaining: int | None = None
+
+
+@router.get("/me/2fa", response_model=TwoFactorStatusResponse, summary="Get 2FA status")
+async def get_2fa_status(
+    current_user: User = Depends(get_current_user),
+    service: UserService = Depends(get_user_service),
+) -> TwoFactorStatusResponse:
+    """Get the current user's 2FA status."""
+    from nexus.users.two_factor import TwoFactorService
+
+    two_factor_service = TwoFactorService(service.session)
+    two_factor = await two_factor_service.get_user_2fa(current_user.id)
+
+    if not two_factor or not two_factor.is_enabled:
+        return TwoFactorStatusResponse(enabled=False)
+
+    return TwoFactorStatusResponse(
+        enabled=True,
+        backup_codes_remaining=len(two_factor.backup_codes),
+    )
+
+
+@router.post("/me/2fa/setup", response_model=TwoFactorSetupResponse, summary="Setup 2FA")
+async def setup_2fa(
+    current_user: User = Depends(get_current_user),
+    service: UserService = Depends(get_user_service),
+) -> TwoFactorSetupResponse:
+    """
+    Initialize 2FA setup.
+
+    Returns a QR code and backup codes. Scan the QR code with an authenticator app,
+    then call /me/2fa/verify with a code to enable 2FA.
+
+    **Save the backup codes securely - they are only shown once.**
+    """
+    from nexus.users.two_factor import TwoFactorService
+
+    two_factor_service = TwoFactorService(service.session)
+
+    try:
+        result = await two_factor_service.setup_2fa(current_user.id, current_user.email)
+        return TwoFactorSetupResponse(**result)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/me/2fa/verify", status_code=status.HTTP_200_OK, summary="Verify and enable 2FA")
+async def verify_2fa(
+    data: TwoFactorVerifyRequest,
+    current_user: User = Depends(get_current_user),
+    service: UserService = Depends(get_user_service),
+) -> dict:
+    """
+    Verify a TOTP code and enable 2FA.
+
+    Call this after setup with a code from your authenticator app to complete setup.
+    """
+    from nexus.users.two_factor import TwoFactorService
+
+    two_factor_service = TwoFactorService(service.session)
+
+    try:
+        if await two_factor_service.verify_and_enable(current_user.id, data.code):
+            return {"message": "2FA enabled successfully"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid verification code",
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/me/2fa/disable", status_code=status.HTTP_200_OK, summary="Disable 2FA")
+async def disable_2fa(
+    data: TwoFactorVerifyRequest,
+    current_user: User = Depends(get_current_user),
+    service: UserService = Depends(get_user_service),
+) -> dict:
+    """
+    Disable 2FA for the current user.
+
+    Requires a valid TOTP code or backup code to confirm.
+    """
+    from nexus.users.two_factor import TwoFactorService
+
+    two_factor_service = TwoFactorService(service.session)
+
+    try:
+        if await two_factor_service.disable_2fa(current_user.id, data.code):
+            return {"message": "2FA disabled successfully"}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid verification code",
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/me/2fa/backup-codes", status_code=status.HTTP_200_OK, summary="Regenerate backup codes")
+async def regenerate_backup_codes(
+    data: TwoFactorVerifyRequest,
+    current_user: User = Depends(get_current_user),
+    service: UserService = Depends(get_user_service),
+) -> dict:
+    """
+    Generate new backup codes.
+
+    Requires a valid TOTP code. Old backup codes will be invalidated.
+
+    **Save the new backup codes securely - they are only shown once.**
+    """
+    from nexus.users.two_factor import TwoFactorService
+
+    two_factor_service = TwoFactorService(service.session)
+
+    try:
+        codes = await two_factor_service.regenerate_backup_codes(current_user.id, data.code)
+        if codes:
+            return {"backup_codes": codes}
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid verification code",
+            )
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
