@@ -171,8 +171,8 @@ class IdentityService:
         # Hash the key for storage
         key_hash = bcrypt.hashpw(full_key.encode(), bcrypt.gensalt()).decode()
 
-        # Create prefix for display (first 12 chars after prefix)
-        key_prefix = f"{settings.api_key_prefix}{raw_key[:8]}..."
+        # SECURITY: Create prefix for display (reduced to 4 chars to minimize leakage)
+        key_prefix = f"{settings.api_key_prefix}{raw_key[:4]}..."
 
         # Calculate expiration
         expires_at = None
@@ -218,13 +218,13 @@ class IdentityService:
 
         # SECURITY: Extract key prefix for efficient filtering
         # This prevents timing attacks and improves performance
-        # Key format: {prefix}{raw_key} where prefix is stored as {prefix}{first_8_chars}...
+        # Key format: {prefix}{raw_key} where prefix is stored as {prefix}{first_4_chars}...
         prefix_len = len(settings.api_key_prefix)
-        if len(api_key_string) < prefix_len + 8:
+        if len(api_key_string) < prefix_len + 4:
             return None
 
-        # Build the stored prefix format: "nx_abc12345..."
-        lookup_prefix = f"{settings.api_key_prefix}{api_key_string[prefix_len:prefix_len+8]}..."
+        # Build the stored prefix format: "nex_abcd..."
+        lookup_prefix = f"{settings.api_key_prefix}{api_key_string[prefix_len:prefix_len+4]}..."
 
         # Filter by prefix first to narrow down candidates (typically 1 result)
         result = await self.db.execute(
@@ -236,18 +236,29 @@ class IdentityService:
             )
         )
 
+        # SECURITY: Constant-time approach to prevent timing attacks
+        # Check all candidates before returning to avoid early-exit timing differences
+        valid_agent = None
+        valid_key = None
+
         for api_key, agent in result.all():
-            # Verify the full key hash
+            # Verify the full key hash (bcrypt.checkpw is constant-time)
             if bcrypt.checkpw(api_key_string.encode(), api_key.key_hash.encode()):
-                # Check expiration
+                # Check expiration - but continue checking other keys
                 if api_key.expires_at and api_key.expires_at < datetime.now(timezone.utc):
                     logger.warning(f"Expired API key used: {api_key.key_prefix}")
-                    return None
+                    continue  # Don't return early - check all keys
 
-                # Update last used
-                api_key.last_used_at = datetime.now(timezone.utc)
-                logger.debug(f"API key verified: {api_key.key_prefix}")
-                return agent, api_key
+                # Store first valid match (don't return early)
+                if valid_agent is None:
+                    valid_agent = agent
+                    valid_key = api_key
+
+        # Only update and return after checking all candidates
+        if valid_agent and valid_key:
+            valid_key.last_used_at = datetime.now(timezone.utc)
+            logger.debug(f"API key verified: {valid_key.key_prefix}")
+            return valid_agent, valid_key
 
         return None
 
