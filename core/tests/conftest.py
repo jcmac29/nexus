@@ -78,6 +78,7 @@ async def db_session(engine) -> AsyncGenerator[AsyncSession, None]:
 async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     """Create a test HTTP client."""
     from nexus.identity.routes import registration_rate_limit, api_key_creation_rate_limit
+    from nexus.users.routes import auth_rate_limit
 
     async def override_get_session():
         yield db_session
@@ -89,6 +90,7 @@ async def client(db_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
     app.dependency_overrides[get_db] = override_get_session
     app.dependency_overrides[registration_rate_limit] = no_rate_limit
     app.dependency_overrides[api_key_creation_rate_limit] = no_rate_limit
+    app.dependency_overrides[auth_rate_limit] = no_rate_limit
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

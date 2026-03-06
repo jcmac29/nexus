@@ -440,7 +440,7 @@ async def get_2fa_status(
     """Get the current user's 2FA status."""
     from nexus.users.two_factor import TwoFactorService
 
-    two_factor_service = TwoFactorService(service.session)
+    two_factor_service = TwoFactorService(service.db)
     two_factor = await two_factor_service.get_user_2fa(current_user.id)
 
     if not two_factor or not two_factor.is_enabled:
@@ -467,7 +467,7 @@ async def setup_2fa(
     """
     from nexus.users.two_factor import TwoFactorService
 
-    two_factor_service = TwoFactorService(service.session)
+    two_factor_service = TwoFactorService(service.db)
 
     try:
         result = await two_factor_service.setup_2fa(current_user.id, current_user.email)
@@ -489,7 +489,7 @@ async def verify_2fa(
     """
     from nexus.users.two_factor import TwoFactorService
 
-    two_factor_service = TwoFactorService(service.session)
+    two_factor_service = TwoFactorService(service.db)
 
     try:
         if await two_factor_service.verify_and_enable(current_user.id, data.code):
@@ -516,7 +516,7 @@ async def disable_2fa(
     """
     from nexus.users.two_factor import TwoFactorService
 
-    two_factor_service = TwoFactorService(service.session)
+    two_factor_service = TwoFactorService(service.db)
 
     try:
         if await two_factor_service.disable_2fa(current_user.id, data.code):
@@ -545,7 +545,7 @@ async def regenerate_backup_codes(
     """
     from nexus.users.two_factor import TwoFactorService
 
-    two_factor_service = TwoFactorService(service.session)
+    two_factor_service = TwoFactorService(service.db)
 
     try:
         codes = await two_factor_service.regenerate_backup_codes(current_user.id, data.code)
