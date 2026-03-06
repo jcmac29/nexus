@@ -70,7 +70,7 @@ async def init_oauth(
         )
 
     service = OAuthService(session)
-    auth_url, state = service.get_authorization_url(
+    auth_url, state = await service.get_authorization_url(
         provider=request.provider,
         redirect_uri=request.redirect_uri,
         client_id=request.client_id,
@@ -103,8 +103,8 @@ async def oauth_callback(
     oauth_service = OAuthService(session)
     identity_service = IdentityService(session)
 
-    # SECURITY: Validate state token to prevent CSRF attacks
-    if not oauth_service.validate_state(request.state, request.provider):
+    # SECURITY: Validate state token to prevent CSRF attacks (uses Redis)
+    if not await oauth_service.validate_state(request.state, request.provider):
         raise HTTPException(
             status_code=400,
             detail="Invalid or expired state token. Please restart the OAuth flow.",
@@ -228,8 +228,8 @@ async def connect_oauth(
 
     oauth_service = OAuthService(session)
 
-    # SECURITY: Validate state token to prevent CSRF attacks
-    if not oauth_service.validate_state(request.state, request.provider):
+    # SECURITY: Validate state token to prevent CSRF attacks (uses Redis)
+    if not await oauth_service.validate_state(request.state, request.provider):
         raise HTTPException(
             status_code=400,
             detail="Invalid or expired state token. Please restart the OAuth flow.",

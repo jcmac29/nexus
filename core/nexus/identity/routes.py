@@ -99,6 +99,39 @@ async def api_key_creation_rate_limit(request: Request):
         )
 
 
+async def api_key_rotation_rate_limit(
+    request: Request,
+    current_agent: Agent = Depends(get_current_agent),
+):
+    """
+    SECURITY: Rate limit API key rotation to prevent abuse.
+    Limit: 5 rotations per hour per AGENT (not IP) - stricter for rotation.
+    """
+    cache = await get_cache()
+
+    # Rate limit by agent_id (more important than IP for authenticated operations)
+    key = f"ratelimit:apikey_rotate:{current_agent.id}"
+
+    allowed, current, remaining = await cache.rate_limit_check(
+        key=key,
+        limit=5,  # 5 rotations per hour per agent
+        window_seconds=3600,
+    )
+
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": "Too many API key rotation attempts. Please try again later.",
+                "retry_after": 3600,
+                "limit": 5,
+                "used": current,
+            },
+            headers={"Retry-After": "3600"},
+        )
+
+
 
 # --- Agent Routes ---
 
@@ -308,6 +341,7 @@ async def rotate_api_key(
     data: APIKeyRotateRequest,
     current_agent: Agent = Depends(get_current_agent),
     service: IdentityService = Depends(get_identity_service),
+    _: None = Depends(api_key_rotation_rate_limit),  # SECURITY: Rate limit rotation
 ) -> APIKeyCreateResponse:
     """
     Rotate an API key - creates a new key and revokes the old one atomically.

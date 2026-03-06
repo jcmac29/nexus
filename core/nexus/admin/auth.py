@@ -66,15 +66,41 @@ def create_refresh_token(admin_id: UUID, expires_days: int = 30) -> str:
 
 
 def decode_token(token: str) -> dict:
-    """Decode and validate a JWT token."""
+    """Decode and validate a JWT token.
+
+    SECURITY: Explicitly specifies algorithm to prevent algorithm confusion attacks.
+    Enables all verification options explicitly.
+    """
     settings = get_settings()
     try:
-        payload = jwt.decode(token, settings.admin_jwt_secret, algorithms=[ALGORITHM])
+        # SECURITY: Explicit algorithm list and verification options
+        payload = jwt.decode(
+            token,
+            settings.admin_jwt_secret,
+            algorithms=["HS256"],  # SECURITY: Explicit algorithm, not variable
+            options={
+                "verify_signature": True,
+                "verify_exp": True,
+                "verify_iat": True,
+                "require": ["exp", "sub", "type"],  # Required claims
+            },
+        )
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token has expired",
+        )
+    except jwt.InvalidSignatureError:
+        # SECURITY: Specific error for signature issues
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token signature",
+        )
+    except jwt.MissingRequiredClaimError as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid token: missing required claim",
         )
     except jwt.InvalidTokenError:
         raise HTTPException(

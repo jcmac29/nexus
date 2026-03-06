@@ -149,11 +149,22 @@ async def refresh_token(
 
 @router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
+    request: Request,
     admin: AdminUser = Depends(get_current_admin),
 ):
-    """Logout (client should discard tokens)."""
-    # JWT tokens are stateless, so we just return success
-    # In a production system, you might want to blacklist the token
+    """Logout and revoke the current token.
+
+    SECURITY: Adds token to revocation list in Redis to prevent reuse.
+    """
+    from nexus.security.tokens import get_token_service
+
+    # Extract the token from Authorization header
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:]  # Remove "Bearer " prefix
+        token_service = get_token_service()
+        await token_service.revoke_token_async(token)
+
     return None
 
 
@@ -321,6 +332,14 @@ async def get_agent(
             detail="Agent not found",
         )
 
+    # SECURITY: Verify authorization - non-super-admins can only access agents in their account
+    if admin.role != AdminRole.SUPER_ADMIN:
+        if agent.account_id != admin.account_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this agent",
+            )
+
     return agent
 
 
@@ -341,16 +360,27 @@ async def update_agent(
         )
 
     service = AdminService(db)
-    agent = await service.update_agent(
-        UUID(agent_id),
-        data.model_dump(exclude_unset=True),
-    )
 
-    if not agent:
+    # SECURITY: First get the agent to verify authorization
+    existing_agent = await service.get_agent(UUID(agent_id))
+    if not existing_agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found",
         )
+
+    # SECURITY: Verify non-super-admins can only modify agents in their account
+    if admin.role != AdminRole.SUPER_ADMIN:
+        if existing_agent.account_id != admin.account_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to modify this agent",
+            )
+
+    agent = await service.update_agent(
+        UUID(agent_id),
+        data.model_dump(exclude_unset=True),
+    )
 
     return agent
 
@@ -371,13 +401,24 @@ async def delete_agent(
         )
 
     service = AdminService(db)
-    deleted = await service.delete_agent(UUID(agent_id))
 
-    if not deleted:
+    # SECURITY: First get the agent to verify authorization
+    existing_agent = await service.get_agent(UUID(agent_id))
+    if not existing_agent:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found",
         )
+
+    # SECURITY: Verify non-super-admins can only delete agents in their account
+    if admin.role != AdminRole.SUPER_ADMIN:
+        if existing_agent.account_id != admin.account_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to delete this agent",
+            )
+
+    deleted = await service.delete_agent(UUID(agent_id))
 
 
 # ============================================================================
@@ -439,6 +480,14 @@ async def get_team(
             detail="Team not found",
         )
 
+    # SECURITY: Verify authorization - non-super-admins can only access teams in their account
+    if admin.role != AdminRole.SUPER_ADMIN:
+        if hasattr(team, 'account_id') and team.account_id != admin.account_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to access this team",
+            )
+
     return team
 
 
@@ -459,16 +508,27 @@ async def update_team(
         )
 
     service = AdminService(db)
-    team = await service.update_team(
-        UUID(team_id),
-        data.model_dump(exclude_unset=True),
-    )
 
-    if not team:
+    # SECURITY: First get the team to verify authorization
+    existing_team = await service.get_team(UUID(team_id))
+    if not existing_team:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Team not found",
         )
+
+    # SECURITY: Verify non-super-admins can only modify teams in their account
+    if admin.role != AdminRole.SUPER_ADMIN:
+        if hasattr(existing_team, 'account_id') and existing_team.account_id != admin.account_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to modify this team",
+            )
+
+    team = await service.update_team(
+        UUID(team_id),
+        data.model_dump(exclude_unset=True),
+    )
 
     return team
 
@@ -489,13 +549,24 @@ async def delete_team(
         )
 
     service = AdminService(db)
-    deleted = await service.delete_team(UUID(team_id))
 
-    if not deleted:
+    # SECURITY: First get the team to verify authorization
+    existing_team = await service.get_team(UUID(team_id))
+    if not existing_team:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Team not found",
         )
+
+    # SECURITY: Verify non-super-admins can only delete teams in their account
+    if admin.role != AdminRole.SUPER_ADMIN:
+        if hasattr(existing_team, 'account_id') and existing_team.account_id != admin.account_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to delete this team",
+            )
+
+    deleted = await service.delete_team(UUID(team_id))
 
 
 @router.post("/teams/{team_id}/members", status_code=status.HTTP_201_CREATED)

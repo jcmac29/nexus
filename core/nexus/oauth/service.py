@@ -116,24 +116,34 @@ class OAuthService:
 
     def __init__(self, session: AsyncSession):
         self.session = session
-        self._state_store: dict[str, dict] = {}  # In production, use Redis
+        self._cache = None  # Redis cache for distributed state storage
 
-    def get_authorization_url(
+    async def _get_cache(self):
+        """Get Redis cache for distributed state storage."""
+        if self._cache is None:
+            from nexus.cache import get_cache
+            self._cache = await get_cache()
+        return self._cache
+
+    async def get_authorization_url(
         self,
         provider: OAuthProvider,
         redirect_uri: str,
         client_id: str,
     ) -> tuple[str, str]:
         """Generate OAuth authorization URL."""
+        import json
         config = OAUTH_CONFIGS[provider]
         state = secrets.token_urlsafe(32)
 
-        # Store state for verification
-        self._state_store[state] = {
-            "provider": provider,
+        # SECURITY: Store state in Redis for distributed deployments
+        cache = await self._get_cache()
+        state_data = {
+            "provider": provider.value,
             "redirect_uri": redirect_uri,
-            "created_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
+        await cache.set(f"oauth:state:{state}", json.dumps(state_data), ttl=600)  # 10 min TTL
 
         params = {
             "client_id": client_id,
@@ -153,42 +163,49 @@ class OAuthService:
 
         return auth_url, state
 
-    def validate_state(self, state: str, provider: OAuthProvider) -> bool:
+    async def validate_state(self, state: str, provider: OAuthProvider) -> bool:
         """
         Validate OAuth state token.
 
         SECURITY: Prevents CSRF attacks by verifying state matches what we generated.
+        Uses Redis for distributed deployments.
         """
-        if state not in self._state_store:
+        import json
+        cache = await self._get_cache()
+
+        # Get state from Redis
+        state_json = await cache.get(f"oauth:state:{state}")
+        if not state_json:
             return False
 
-        stored = self._state_store[state]
+        try:
+            stored = json.loads(state_json)
+        except (json.JSONDecodeError, TypeError):
+            return False
 
         # Check provider matches
-        if stored["provider"] != provider:
+        if stored["provider"] != provider.value:
             return False
 
-        # Check state hasn't expired (10 minute window)
-        created_at = stored["created_at"]
+        # Check state hasn't expired (10 minute window - TTL handles this, but double-check)
+        created_at = datetime.fromisoformat(stored["created_at"])
         if datetime.now(timezone.utc) - created_at > timedelta(minutes=10):
             # Clean up expired state
-            del self._state_store[state]
+            await cache.delete(f"oauth:state:{state}")
             return False
 
-        # State is valid - remove it to prevent reuse
-        del self._state_store[state]
+        # State is valid - remove it to prevent reuse (single-use tokens)
+        await cache.delete(f"oauth:state:{state}")
         return True
 
-    def cleanup_expired_states(self) -> int:
-        """Remove expired state tokens. Returns count of cleaned states."""
-        now = datetime.now(timezone.utc)
-        expired = [
-            state for state, data in self._state_store.items()
-            if now - data["created_at"] > timedelta(minutes=10)
-        ]
-        for state in expired:
-            del self._state_store[state]
-        return len(expired)
+    async def cleanup_expired_states(self) -> int:
+        """Remove expired state tokens. Returns count of cleaned states.
+
+        Note: With Redis TTL, this is mostly handled automatically.
+        This method is kept for compatibility but does minimal work.
+        """
+        # Redis TTL handles expiration automatically
+        return 0
 
     async def exchange_code(
         self,

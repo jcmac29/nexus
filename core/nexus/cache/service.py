@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, TypeVar, Callable
 from functools import wraps
 import hashlib
@@ -81,7 +81,8 @@ class CacheService:
         # Fallback to local cache
         if key in self._local_cache:
             entry = self._local_cache[key]
-            if entry.get("expires_at") and entry["expires_at"] < datetime.utcnow():
+            # SECURITY: Use timezone-aware datetime to prevent token bypass
+            if entry.get("expires_at") and entry["expires_at"] < datetime.now(timezone.utc):
                 del self._local_cache[key]
                 self._stats["misses"] += 1
                 return default
@@ -118,7 +119,7 @@ class CacheService:
         # Fallback to local cache
         self._local_cache[key] = {
             "value": value,
-            "expires_at": datetime.utcnow() + timedelta(seconds=ttl) if ttl else None,
+            "expires_at": datetime.now(timezone.utc) + timedelta(seconds=ttl) if ttl else None,
             "tags": tags,
         }
 
@@ -226,7 +227,7 @@ class CacheService:
                 pass
 
         if key in self._local_cache:
-            self._local_cache[key]["expires_at"] = datetime.utcnow() + timedelta(seconds=ttl)
+            self._local_cache[key]["expires_at"] = datetime.now(timezone.utc) + timedelta(seconds=ttl)
 
     async def ttl(self, key: str) -> int:
         """Get TTL of a key."""
@@ -239,7 +240,7 @@ class CacheService:
         if key in self._local_cache:
             entry = self._local_cache[key]
             if entry.get("expires_at"):
-                remaining = (entry["expires_at"] - datetime.utcnow()).total_seconds()
+                remaining = (entry["expires_at"] - datetime.now(timezone.utc)).total_seconds()
                 return max(0, int(remaining))
         return -1
 
@@ -299,7 +300,7 @@ class CacheService:
         if lock_key not in self._local_cache:
             self._local_cache[lock_key] = {
                 "value": "1",
-                "expires_at": datetime.utcnow() + timedelta(seconds=timeout),
+                "expires_at": datetime.now(timezone.utc) + timedelta(seconds=timeout),
             }
             return True
         return False
@@ -322,7 +323,7 @@ class CacheService:
 
         Returns: (allowed, current_count, remaining)
         """
-        now = datetime.utcnow().timestamp()
+        now = datetime.now(timezone.utc).timestamp()
         window_start = now - window_seconds
 
         if self._redis:
@@ -354,7 +355,7 @@ class CacheService:
 
         self._local_cache[rate_key] = {
             "value": timestamps,
-            "expires_at": datetime.utcnow() + timedelta(seconds=window_seconds),
+            "expires_at": datetime.now(timezone.utc) + timedelta(seconds=window_seconds),
         }
 
         current_count = len(timestamps)

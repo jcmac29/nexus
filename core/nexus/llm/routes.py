@@ -4,15 +4,47 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from nexus.auth import get_current_agent
+from nexus.cache import get_cache
 from nexus.identity.models import Agent
 from nexus.llm.base import LLMConfig, LLMMessage, MessageRole, ToolDefinition
 from nexus.llm.router import get_llm_router
 
 router = APIRouter(prefix="/llm", tags=["llm"])
+
+
+# --- Rate Limiting for LLM Execution ---
+
+async def llm_rate_limit(request: Request, agent: Agent = Depends(get_current_agent)):
+    """
+    SECURITY: Rate limit LLM execution to prevent cost abuse.
+    Limit: 30 completions per minute per agent (expensive operations).
+    """
+    cache = await get_cache()
+
+    key = f"ratelimit:llm:completions:{agent.id}"
+
+    allowed, current, remaining = await cache.rate_limit_check(
+        key=key,
+        limit=30,  # 30 completions per minute
+        window_seconds=60,
+    )
+
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limit_exceeded",
+                "message": "LLM rate limit exceeded. Please try again later.",
+                "retry_after": 60,
+                "limit": 30,
+                "used": current,
+            },
+            headers={"Retry-After": "60"},
+        )
 
 
 # =============================================================================
@@ -140,6 +172,7 @@ async def get_provider_info(
 async def complete(
     request: CompletionRequest,
     agent: Agent = Depends(get_current_agent),
+    _: None = Depends(llm_rate_limit),  # SECURITY: Rate limit expensive operations
 ) -> CompletionResponse:
     """Generate a completion using the specified LLM provider.
 
@@ -214,6 +247,7 @@ async def complete(
 async def chat(
     request: ChatRequest,
     agent: Agent = Depends(get_current_agent),
+    _: None = Depends(llm_rate_limit),  # SECURITY: Rate limit expensive operations
 ) -> ChatResponse:
     """Simple single-turn chat interface.
 
@@ -258,6 +292,7 @@ async def analyze(
     instruction: str = "Analyze this content and provide insights.",
     provider: str | None = None,
     agent: Agent = Depends(get_current_agent),
+    _: None = Depends(llm_rate_limit),  # SECURITY: Rate limit expensive operations
 ) -> ChatResponse:
     """Analyze content using AI.
 

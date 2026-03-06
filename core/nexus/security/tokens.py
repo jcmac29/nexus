@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Any
 import uuid
 
@@ -84,7 +84,7 @@ class TokenService:
         if expires_delta is None:
             expires_delta = timedelta(minutes=self.access_token_expire_minutes)
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         payload = TokenPayload(
             sub=subject,
             type="access",
@@ -111,7 +111,7 @@ class TokenService:
         if expires_delta is None:
             expires_delta = timedelta(days=self.refresh_token_expire_days)
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         payload = TokenPayload(
             sub=subject,
             type="refresh",
@@ -234,7 +234,7 @@ class TokenService:
                 try:
                     # Calculate TTL from token expiration
                     exp = datetime.fromisoformat(payload_dict["exp"]) if isinstance(payload_dict["exp"], str) else datetime.fromtimestamp(payload_dict["exp"])
-                    ttl = max(1, int((exp - datetime.utcnow()).total_seconds()))
+                    ttl = max(1, int((exp - datetime.now(timezone.utc)).total_seconds()))
                     await cache.set(f"revoked_token:{jti}", "1", ttl=ttl)
                 except Exception:
                     pass  # In-memory revocation still works
